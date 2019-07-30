@@ -1,0 +1,35 @@
+name:                main
+version:             0.1.0.0
+synopsis:            Synopsis
+description:         Simple checkers game for ITMO fp course
+
+homepage:            https://github.com/notantony/fp-checkers/
+license:             MIT
+license-file:        LICENSE
+author:              Chekashev Anton
+maintainer:          not.antony@yandex.ru
+copyright:           2019 Chekashev Anton
+
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+tested-with:         GHC == 8.0.1
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Lib
+  ghc-options:         -Wall
+  build-depends:       base >= 4.9 && < 5
+                     , base
+  default-language:    Haskell2010
+
+executable hw4
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -Wall
+  build-depends:       base
+                     , main
+                     , haskell-gi-base
+                     , gi-gtk
+  default-language:    Haskell2010
