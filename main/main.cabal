@@ -18,18 +18,24 @@ tested-with:         GHC == 8.0.1
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib
+  exposed-modules:     Lib, Board, MyGraphics
   ghc-options:         -Wall
-  build-depends:       base >= 4.9 && < 5
-                     , base
+  build-depends:       base >= 4.9.0.0
+                     , vector
+                     , gloss
   default-language:    Haskell2010
 
-executable hw4
+executable run
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -Wall
   build-depends:       base
+                     , GLUT
+                     , gloss
+                     , random
+                     , network
                      , main
-                     , haskell-gi-base
-                     , gi-gtk
+                     , mtl
+                     --, server
+                     --, HGL
   default-language:    Haskell2010
