@@ -11,22 +11,24 @@ import MyGraphics
 import Board
   ( Board(..)
   )
+import Resources
+  ( boardTex
+  , blackCheckerTex
+  , whiteCheckerTex
+  )
 
-newtype Scene = Scene [Actor]
-  deriving ()
+newtype Scene = Scene { unScene :: [Actor] }
 
 data Handler = Handler 
   { hPrior  :: Int 
-  , hAction :: Event -> Scene -> Maybe (IO Scene)
+  , hAction :: Event -> Scene -> IO Scene
   }
-  deriving ()
 
 data Actor = Actor
   { aId      :: String
   , aHandler :: Maybe Handler
   , aPicture :: Picture
   }
-  deriving ()
 
 
 drawScene :: Scene -> IO Picture
@@ -51,26 +53,34 @@ handleTick _ x = do
   -- tell [makeTextNormal (100, 100) "Hello"]
 
 decor :: Picture -> Actor
-decor pic = Actor{ aId = "", aHandler = Nothing, aPicture = pic}
+decor pic = Actor{ aId = "", aHandler = Nothing, aPicture = pic }
   
 mainMenuScene :: Scene
 mainMenuScene = Scene
   [ decor $ toBold $ makeTextLarge (-150, 200) "Main menu"
   , decor $ makeTextNormal (0, 0) "Play"
+  -- , decor $ board
+  , decor $ whiteCheckerTex
+  , decor $ Translate 220 220 blackCheckerTex
   ]
 
 
-makeButton :: Handler -> Point -> String -> Actor
-makeButton (x, y) s = 
+--makeButton :: Handler -> Point -> String -> Actor
+--makeButton (x, y) s = 
 
 flag = mainMenuScene
-
-
 
 -- Длина кнопки зависит от количества символов
 main :: IO ()
 main = do
-  playIO (InWindow "Checkers" (800, 600) (200, 200)) black 1 flag drawScene handleEvent handleTick
+  playIO 
+    (InWindow "Checkers" (1024, 1024) (0, 0))
+    black
+    1
+    flag
+    drawScene
+    handleEvent
+    handleTick
 
 
 -- import Network
