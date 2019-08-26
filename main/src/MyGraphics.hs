@@ -2,10 +2,21 @@ module MyGraphics
   ( makeTextLarge
   , makeTextNormal
   , toBold
+  , makePiece
   --, loadTextures
   ) where
 
 import Graphics.Gloss
+import Board
+  ( Board
+  , Piece(..)
+  , Color(..)
+  )
+import Resources
+  ( boardTex
+  , blackManTex
+  , whiteManTex
+  )
 
 --loadTextures :: IO ()
 --someFunc = putStrLn "someFunc"
@@ -22,3 +33,8 @@ makeTextLarge = makeText 0.5
 toBold :: Picture -> Picture
 toBold pic = Pictures [pic, Translate 1 0 pic]
 
+makePiece :: Piece -> Picture
+makePiece (Man Black) = blackManTex
+makePiece (Man White) = whiteManTex
+makePiece (King Black) = blackManTex
+makePiece (King White) = whiteManTex
