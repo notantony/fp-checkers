@@ -7,6 +7,9 @@ import Graphics.Gloss.Data.Controller
 import Graphics.Gloss.Interface.IO.Game
 import System.Environment
 import Control.Monad.Writer(execWriter, tell)
+import Data.Maybe
+  ( catMaybes
+  )
 
 import MyGraphics
   ( makeTextLarge
@@ -28,6 +31,10 @@ import Resources
   , blackManTex
   , whiteManTex
   )
+import Util
+  ( runPipe
+  )
+
 
 newtype Scene = Scene { unScene :: [Actor] }
 
@@ -42,13 +49,34 @@ data Actor = Actor
   , aPicture :: Picture
   }
 
+
+--   Scene -> (IO Sce)
+
+--   ((Scene -> IO Scene) -> Scene -> Scene) -> Scene -> [Scene -> IO Scene] -> Scene
+--   (Scene -> (Scene -> IO Scene) -> Scene) -> Scene -> [Scene -> IO Scene] -> Scene
+
+-- (a -> IO a) -> (IO a -> IO a)
+
+
 drawScene :: Scene -> IO Picture
 drawScene (Scene actors) = do
   return $ Translate (-1080 / 2) (-860 / 2) $ Pictures $ map aPicture actors
 
 handleEvent :: Event -> Scene -> IO Scene
-handleEvent event x = do
-  return x
+handleEvent event scene@(Scene actors) = 
+  let
+    handlers :: [Handler]
+    handlers = catMaybes $ map aHandler actors
+    mx :: Int
+    mx = maximum $ map hPrior handlers
+    actions :: [Event -> Scene -> IO Scene]
+    actions = map hAction $ filter (\handler -> hPrior handler == mx) handlers
+    pipe :: [Scene -> IO Scene]
+    pipe = map (\op -> op event) actions
+  in
+    (runPipe pipe) scene
+    -- (foldr (>=>) return) pipe
+    -- return (Scene actors)
 
 handleTick :: Float -> Scene -> IO Scene
 handleTick _ x = do
@@ -62,7 +90,6 @@ handleTick _ x = do
   -- tell [t]
   -- tell [makeTextNormal (1, 0) "Hello"]
   -- tell [makeTextNormal (100, 100) "Hello"]
-
 
 
 decor :: Picture -> Actor
@@ -102,12 +129,24 @@ runGame =
     handleEvent
     handleTick
 
+inArea :: (Float, Float) -> (Float, Float) -> (Float, Float) -> Bool
+inArea (x1, y1) (x2, y2) (x, y) = (x1 <= x && x <= x2) && (y1 <= y && y <= y2)
+
+flashField :: Coord -> Event -> Scene -> IO Scene
+flashField (Coord (a, b)) (EventKey (MouseButton _) _ _ (x, y)) _ = return $ Scene []
+flashField (Coord (a, b)) _ scene = return scene
+
 coordToPos :: Coord -> (Float, Float)
-coordToPos (Coord (x, y)) = (fromIntegral x * 100 + 60, fromIntegral y * 100 + 60)
+coordToPos (Coord (a, b)) = (fromIntegral a * 100 + 60, fromIntegral b * 100 + 60)
 
 setupPiece :: Coord -> Piece -> Actor
-setupPiece coord piece = 
-  decor $ (uncurry Translate) (coordToPos coord) (makePiece piece) 
+setupPiece coord piece =
+  Actor{ aId = "piece", aHandler = Just handler, aPicture = pic }
+    where 
+      pic :: Picture
+      pic = (uncurry Translate) (coordToPos coord) (makePiece piece) 
+      handler :: Handler
+      handler =  Handler 0 $ flashField coord
 
 setupBoard :: Board -> Scene
 setupBoard board = Scene $ (decor $ boardTex) : pieces

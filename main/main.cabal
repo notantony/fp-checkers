@@ -24,8 +24,10 @@ library
                      , Resources
                      , Engine
                      , Util
+                     , Server
   ghc-options:         -Wall
   build-depends:       base >= 4.9.0.0
+                     , network-simple
                      , vector
                      , gloss
                      , file-embed
@@ -36,12 +38,9 @@ library
 executable run
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -Wall
+  ghc-options:         -Wall -threaded
   build-depends:       base
-                     , GLUT
                      , gloss
-                     , random
-                     , network
                      , main
                      --, server
                      --, HGL

@@ -1,11 +1,20 @@
 import Engine
   ( runGame
   )
+import Server
+  ( runServerDefault
+  , runClientDefault
+  , sendMsg
+  )
 
--- Длина кнопки зависит от количества символов
 main :: IO ()
 main = do
-  runGame
+  (a, b) <- runClientDefault
+  _ <- sendMsg "ping2" (a, b)
+  return ()
+
+  -- runServerDefault
+  -- runGame
 
 -- import Network
 -- import Control.Concurrent
