@@ -1,17 +1,45 @@
+-- module Main
+--   where
+
 import Engine
   ( runGame
   )
 import Server
   ( runServerDefault
-  , runClientDefault
+  , runTranslatorDefault
   , sendMsg
   )
 
-main :: IO ()
-main = do
-  (a, b) <- runClientDefault
-  _ <- sendMsg "ping2" (a, b)
+
+import Control.Concurrent.MVar
+import Control.Concurrent 
+import Network.Simple.TCP
+
+main2 :: IO ()
+main2 = withSocketsDo $ do
+  runServerDefault
   return ()
+
+main :: IO ()
+main = withSocketsDo $ do
+  (buf, listenerId) <- runTranslatorDefault
+
+  m1 <- getLine
+  _ <- putMVar buf m1
+
+  m2 <- getLine
+  _ <-putMVar buf m2
+
+  m3 <- getLine
+  _ <- putMVar buf m3
+
+  killThread listenerId
+  return ()
+
+
+  -- (a, b) <- runClientDefault
+  -- _ <- sendMsg "ping2" (a, b)
+  -- return ()
 
   -- runServerDefault
   -- runGame

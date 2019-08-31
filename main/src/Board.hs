@@ -8,7 +8,14 @@ module Board
   , startingPosition
   ) where
 
-import Data.Vector((!), (!?), Vector, fromList, (//))
+import Data.Vector
+  ( (!)
+  , (!?)
+  , Vector
+  , fromList
+  , (//)
+  , toList
+  )
 import Data.Maybe
   ( isJust
   , mapMaybe
@@ -102,8 +109,27 @@ dumpBoard board = mapMaybe pullMaybeSnd merged
     merged :: [(Coord, Maybe Piece)]
     merged = map (\coord -> (coord, unField $ getFieldUnsafe board coord)) allArea
     
+serializeField :: Field -> Char
+serializeField (Field Nothing)              = '0'
+serializeField (Field (Just (Man Black)))   = '1'
+serializeField (Field (Just (Man White)))   = '2'
+serializeField (Field (Just (King Black)))  = '3'
+serializeField (Field (Just (King Black)))  = '4'
 
-    
+serializeBoard :: Board -> String
+serializeBoard (Board v) = map serializeField (toList v)
+
+deserializeField :: Char -> Field
+deserializeField '0' = Field Nothing
+deserializeField '1' = Field $ Just $ Man Black
+deserializeField '2' = Field $ Just $ Man White
+deserializeField '3' = Field $ Just $ King Black
+deserializeField '4' = Field $ Just $ King Black
+deserializeField _   = error "Unxpected characted in serialized string" 
+
+deserializeBoard :: String -> Board
+deserializeBoard s = Board $ fromList $ map deserializeField s
+
 -- succTake :: Color -> Board -> [Board]
 
 -- succMove :: Color -> Board -> [Board]

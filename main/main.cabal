@@ -42,6 +42,5 @@ executable run
   build-depends:       base
                      , gloss
                      , main
-                     --, server
-                     --, HGL
+                     , network-simple
   default-language:    Haskell2010

@@ -10,7 +10,6 @@ import Control.Monad.Writer(execWriter, tell)
 import Data.Maybe
   ( catMaybes
   )
-
 import MyGraphics
   ( makeTextLarge
   , makeTextNormal
@@ -34,7 +33,13 @@ import Resources
 import Util
   ( runPipe
   )
-
+import Control.Concurrent
+  ( forkIO
+  , MVar
+  )
+import Server
+  ( runTranslatorDefault    
+  )
 
 newtype Scene = Scene { unScene :: [Actor] }
 
@@ -99,13 +104,6 @@ mainMenuScene :: Scene
 mainMenuScene = Scene
   [ decor $ toBold $ makeTextLarge (-150, 200) "Main menu"
   , decor $ makeTextNormal (0, 0) "Play"
-  , decor $ boardTex
-  -- , decor $ whiteManTex
-  -- , decor $ Translate 0 0 blackManTex
-  , setupPiece (Coord (0, 7)) (Man White)
-  , setupPiece (Coord (0, 6)) (Man Black)
-  , setupPiece (Coord (1, 1)) (Man White)
-  , setupPiece (Coord (2, 2)) (Man White)
   ]
 
 
@@ -118,7 +116,9 @@ boardBegin :: (Float, Float)
 boardBegin = (60, 60)
 
 runGame :: IO ()
-runGame =
+runGame = do
+  (buf, listenerId) <- runTranslatorDefault
+
   playIO
     (InWindow "Checkers" windowSize (0, 0))
     black
@@ -128,6 +128,7 @@ runGame =
     drawScene
     handleEvent
     handleTick
+  return ()
 
 inArea :: (Float, Float) -> (Float, Float) -> (Float, Float) -> Bool
 inArea (x1, y1) (x2, y2) (x, y) = (x1 <= x && x <= x2) && (y1 <= y && y <= y2)
