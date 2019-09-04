@@ -22,6 +22,8 @@ main2 = withSocketsDo $ do
 
 main :: IO ()
 main = withSocketsDo $ do
+  -- runServerDefault
+  -- runGame
   (buf, listenerId) <- runTranslatorDefault
 
   m1 <- getLine
@@ -30,8 +32,8 @@ main = withSocketsDo $ do
   m2 <- getLine
   _ <-putMVar buf m2
 
-  m3 <- getLine
-  _ <- putMVar buf m3
+  -- m3 <- getLine
+  -- _ <- putMVar buf m3
 
   killThread listenerId
   return ()

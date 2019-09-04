@@ -23,31 +23,42 @@ import Data.ByteString.Char8
   , unpack
   , pack
   )
--- import Board
---   ( Ser)
+import Data.IORef
+  ( IORef
+  , newIORef
+  , atomicModifyIORef'
+  , readIORef 
+  )
+import Data.Foldable
+  ( for_
+  )
   
-recvAll :: Socket -> IO [ByteString]
-recvAll socket = 
-  do
-    buf <- recv socket 1024
-    case buf of
-      Nothing -> do
-        putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
-        return []
-      Just msg -> do
-        putStrLn $ "Recieved: \"" ++ (unpack msg) ++ "\""
-        recvAll socket
-
--- sendBoard :: Board -> IO ()
 
 runServer :: HostPreference -> ServiceName -> IO ()
-runServer hostPref service = serve hostPref service logAll
-  where
-    logAll :: (Socket, SockAddr) -> IO ()
-    logAll (socket, sockAddr) = do
-      putStrLn $ "Connected: " ++ show sockAddr ++ " / " ++ show socket
-      buf <- recvAll socket
+runServer hostPref service = do
+  recievers <- newIORef []
+  let
+    welcomeReciever :: (Socket, SockAddr) -> IO ()
+    welcomeReciever sockPair@(socket, sockAddr) = do
+      putStrLn $ "Connected: " ++ (show sockPair)
+      atomicModifyIORef' recievers (\xs -> ((sockPair : xs), ()))
+      buf <- runBroadcast socket
       putStrLn $ unpack $ mconcat buf
+    runBroadcast :: Socket -> IO [ByteString]
+    runBroadcast socket = do
+      buf <- recv socket 1024
+      case buf of
+        Nothing -> do
+          putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
+          atomicModifyIORef' recievers (\xs -> ((filter (\(x, _) -> x == socket) xs), ()))
+          return []
+        Just msg -> do
+          putStrLn $ "Recieved: \"" ++ (unpack msg) ++ "\""
+          curRecievers <- readIORef recievers
+          putStrLn $ "Broadcasting to: " ++ (show curRecievers)
+          for_ curRecievers sendMsg "I'm broadcasting"
+          runBroadcast socket
+  serve hostPref service welcomeReciever
 
 localhost :: HostName
 localhost = "127.0.0.1"
@@ -61,20 +72,20 @@ runServerDefault = runServer (Host localhost) defaultPort
 runTranslatorDefault :: IO (MVar String, ThreadId)
 runTranslatorDefault = runTranslator localhost defaultPort
 
-sendMsg :: String -> (Socket, SockAddr) -> IO ()
-sendMsg msg (socket, sockAddr) = do
+sendMsg :: String -> Socket -> IO ()
+sendMsg msg socket = do
   send socket $ pack msg
 
 runTranslator :: HostName -> ServiceName -> IO (MVar String, ThreadId)
 runTranslator host service = do
-  buf <- newEmptyMVar
+  listenBuf <- newEmptyMVar
+  outputBuf <- newIORef [] 
   let
     listenLoop :: (Socket, SockAddr) -> IO ()
-    listenLoop sockPair = do
-      msg <- takeMVar buf
+    listenLoop sockPair@(socket, _) = do
+      msg <- takeMVar listenBuf
       putStrLn $ "Sending: \"" ++ msg ++ "\""
-      sendMsg msg sockPair
+      sendMsg msg socket
       listenLoop sockPair
   translatorThreadId <- forkIO $ connect host service listenLoop
-  return (buf, translatorThreadId)
-
+  return (listenBuf, translatorThreadId)

@@ -80,8 +80,6 @@ handleEvent event scene@(Scene actors) =
     pipe = map (\op -> op event) actions
   in
     (runPipe pipe) scene
-    -- (foldr (>=>) return) pipe
-    -- return (Scene actors)
 
 handleTick :: Float -> Scene -> IO Scene
 handleTick _ x = do
@@ -97,15 +95,19 @@ handleTick _ x = do
   -- tell [makeTextNormal (100, 100) "Hello"]
 
 
-decor :: Picture -> Actor
-decor pic = Actor{ aId = "", aHandler = Nothing, aPicture = pic }
+decorate :: Picture -> Actor
+decorate pic = Actor{ aId = "", aHandler = Nothing, aPicture = pic }
   
 mainMenuScene :: Scene
 mainMenuScene = Scene
-  [ decor $ toBold $ makeTextLarge (-150, 200) "Main menu"
-  , decor $ makeTextNormal (0, 0) "Play"
+  [ decorate $ toBold $ makeTextLarge (-150, 200) "Main menu"
+  , decorate $ makeTextNormal (0, 0) "Play"
   ]
 
+loadingScreenScene :: Scene
+loadingScreenScene = Scene
+  [ decorate $ makeTextNormal (400, 400) "Loading..."
+  ]
 
 --makeButton :: Handler -> Point -> String -> Actor
 --makeButton (x, y) s =
@@ -117,14 +119,14 @@ boardBegin = (60, 60)
 
 runGame :: IO ()
 runGame = do
-  (buf, listenerId) <- runTranslatorDefault
+  -- (buf, listenerId) <- runTranslatorDefault
 
   playIO
     (InWindow "Checkers" windowSize (0, 0))
     black
     1
-    -- mainMenuScene
-    (setupBoard startingPosition)
+    -- (setupBoard startingPosition)
+    loadingScreenScene
     drawScene
     handleEvent
     handleTick
@@ -150,7 +152,7 @@ setupPiece coord piece =
       handler =  Handler 0 $ flashField coord
 
 setupBoard :: Board -> Scene
-setupBoard board = Scene $ (decor $ boardTex) : pieces
+setupBoard board = Scene $ (decorate $ boardTex) : pieces
   where
     dumped :: [(Coord, Piece)]
     dumped = dumpBoard board

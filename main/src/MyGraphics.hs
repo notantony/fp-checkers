@@ -3,7 +3,6 @@ module MyGraphics
   , makeTextNormal
   , toBold
   , makePiece
-  --, loadTextures
   ) where
 
 import Graphics.Gloss
