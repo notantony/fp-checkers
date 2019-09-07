@@ -35,12 +35,20 @@ library
                      , mtl
   default-language:    Haskell2010
 
-executable run
+executable checkers
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -Wall -threaded
   build-depends:       base
-                     , gloss
+                     , main
+                     , network-simple
+  default-language:    Haskell2010
+
+executable server
+  hs-source-dirs:      app
+  main-is:             MainServer.hs
+  ghc-options:         -Wall -threaded
+  build-depends:       base
                      , main
                      , network-simple
   default-language:    Haskell2010

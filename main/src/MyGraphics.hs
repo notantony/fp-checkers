@@ -9,7 +9,7 @@ import Graphics.Gloss
 import Board
   ( Board
   , Piece(..)
-  , Color(..)
+  , Side(..)
   )
 import Resources
   ( boardTex

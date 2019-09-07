@@ -1,10 +1,9 @@
 module Server
-  ( runTranslator
-  , runServerDefault
-  , sendMsg
+  ( sendMsg
   , localhost
   , defaultPort
-  , runTranslatorDefault
+  , runClient
+  , runServer
   )
   where
 
@@ -16,6 +15,7 @@ import Control.Concurrent
   , ThreadId
   , takeMVar
   , newEmptyMVar
+  , putMVar
   )
 import System.IO
 import Data.ByteString.Char8
@@ -26,38 +26,47 @@ import Data.ByteString.Char8
 import Data.IORef
   ( IORef
   , newIORef
+  , readIORef
   , atomicModifyIORef'
-  , readIORef 
   )
 import Data.Foldable
   ( for_
   )
-  
+import Data.List
+  ( elemIndex
+  )
 
 runServer :: HostPreference -> ServiceName -> IO ()
 runServer hostPref service = do
-  recievers <- newIORef []
+  storage <- newIORef "wew"
   let
     welcomeReciever :: (Socket, SockAddr) -> IO ()
     welcomeReciever sockPair@(socket, sockAddr) = do
       putStrLn $ "Connected: " ++ (show sockPair)
-      atomicModifyIORef' recievers (\xs -> ((sockPair : xs), ()))
-      buf <- runBroadcast socket
-      putStrLn $ unpack $ mconcat buf
+      _ <- runBroadcast socket
+      return ()
+    sendStorage :: Socket -> IO ()
+    sendStorage socket = do
+      content <- readIORef storage
+      sendMsg content socket
     runBroadcast :: Socket -> IO [ByteString]
     runBroadcast socket = do
       buf <- recv socket 1024
       case buf of
         Nothing -> do
           putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
-          atomicModifyIORef' recievers (\xs -> ((filter (\(x, _) -> x == socket) xs), ()))
           return []
         Just msg -> do
-          putStrLn $ "Recieved: \"" ++ (unpack msg) ++ "\""
-          curRecievers <- readIORef recievers
-          putStrLn $ "Broadcasting to: " ++ (show curRecievers)
-          for_ curRecievers sendMsg "I'm broadcasting"
-          runBroadcast socket
+          let unpacked = unpack msg
+          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ (show socket) 
+          if unpacked == "ping"
+            then do
+              sendStorage socket
+              runBroadcast socket
+            else do
+              atomicModifyIORef' storage $ \_ -> (unpacked, ())
+              sendStorage socket
+              runBroadcast socket
   serve hostPref service welcomeReciever
 
 localhost :: HostName
@@ -66,26 +75,40 @@ localhost = "127.0.0.1"
 defaultPort :: ServiceName
 defaultPort = "5050"
 
-runServerDefault :: IO ()
-runServerDefault = runServer (Host localhost) defaultPort
+-- runServerDefault :: IO ()
+-- runServerDefault = runServer (Host localhost) defaultPort
 
-runTranslatorDefault :: IO (MVar String, ThreadId)
-runTranslatorDefault = runTranslator localhost defaultPort
+-- runClientDefault :: IO (MVar String, ThreadId)
+-- runClientDefault = runClient localhost defaultPort
+
+recvMsg :: Socket -> IO String
+recvMsg socket = do
+  buf <- recv socket 1024
+  case buf of
+    Nothing -> do
+      putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
+      return []
+    Just msg -> do
+      let unpacked = unpack msg
+      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ (show socket)  
+      return unpacked
 
 sendMsg :: String -> Socket -> IO ()
 sendMsg msg socket = do
+  putStrLn $ "Sending: \"" ++ msg ++ "\" to " ++ (show socket)
   send socket $ pack msg
 
-runTranslator :: HostName -> ServiceName -> IO (MVar String, ThreadId)
-runTranslator host service = do
-  listenBuf <- newEmptyMVar
-  outputBuf <- newIORef [] 
+runClient :: HostName -> ServiceName -> IO (ThreadId, MVar String, MVar String)
+runClient host service = do
+  sendBuf <- newEmptyMVar
+  recvBuf <- newEmptyMVar
   let
     listenLoop :: (Socket, SockAddr) -> IO ()
     listenLoop sockPair@(socket, _) = do
-      msg <- takeMVar listenBuf
-      putStrLn $ "Sending: \"" ++ msg ++ "\""
+      msg <- takeMVar sendBuf
       sendMsg msg socket
+      response <- recvMsg socket
+      putMVar recvBuf response
       listenLoop sockPair
-  translatorThreadId <- forkIO $ connect host service listenLoop
-  return (listenBuf, translatorThreadId)
+  clientThreadId <- forkIO $ connect host service listenLoop
+  return (clientThreadId, sendBuf, recvBuf)

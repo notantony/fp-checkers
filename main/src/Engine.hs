@@ -20,7 +20,7 @@ import Board
   ( Board(..)
   , Coord(..)
   , Piece(..)
-  , Color(..)
+  , Side(..)
   , Field(..)
   , dumpBoard
   , startingPosition
@@ -32,14 +32,20 @@ import Resources
   )
 import Util
   ( runPipe
+  , readNetworkCfg
   )
 import Control.Concurrent
   ( forkIO
   , MVar
+  , putMVar
+  , tryPutMVar
+  , readMVar
+  , tryTakeMVar
   )
 import Server
-  ( runTranslatorDefault    
+  ( runClient
   )
+import Network.Simple.TCP
 
 newtype Scene = Scene { unScene :: [Actor] }
 
@@ -53,15 +59,6 @@ data Actor = Actor
   , aHandler :: Maybe Handler
   , aPicture :: Picture
   }
-
-
---   Scene -> (IO Sce)
-
---   ((Scene -> IO Scene) -> Scene -> Scene) -> Scene -> [Scene -> IO Scene] -> Scene
---   (Scene -> (Scene -> IO Scene) -> Scene) -> Scene -> [Scene -> IO Scene] -> Scene
-
--- (a -> IO a) -> (IO a -> IO a)
-
 
 drawScene :: Scene -> IO Picture
 drawScene (Scene actors) = do
@@ -81,18 +78,20 @@ handleEvent event scene@(Scene actors) =
   in
     (runPipe pipe) scene
 
-handleTick :: Float -> Scene -> IO Scene
-handleTick _ x = do
+handleTick :: (MVar String, MVar String) -> Float -> Scene -> IO Scene
+handleTick (sendBuf, recvBuf) _ x = do
+  _ <- tryPutMVar sendBuf "hi"
+  _ <- tryTakeMVar recvBuf
   return x
 
--- drawScene :: Scene -> Picture 
+-- drawScene :: Scene -> Picture
 -- drawScene MainMenu = 
-  -- Pictures $ execWriter $ do
-  -- tell [toBold $ makeTextLarge (-100, 200) "Main menu"]
-  -- tell [makeTextNormal (0, 0) "Play"]
-  -- tell [t]
-  -- tell [makeTextNormal (1, 0) "Hello"]
-  -- tell [makeTextNormal (100, 100) "Hello"]
+--   Pictures $ execWriter $ do
+--   tell [toBold $ makeTextLarge (-100, 200) "Main menu"]
+--   tell [makeTextNormal (0, 0) "Play"]
+--   tell [t]
+--   tell [makeTextNormal (1, 0) "Hello"]
+--   tell [makeTextNormal (100, 100) "Hello"]
 
 
 decorate :: Picture -> Actor
@@ -117,9 +116,22 @@ windowSize = (1080, 860)
 boardBegin :: (Float, Float)
 boardBegin = (60, 60)
 
+-- hostGame :: Side -> IO () 
+-- hostGame
+
+-- joinGame :: MVar 
+
+-- prepareGame :: MVar String -> Side -> IO ()
+
 runGame :: IO ()
 runGame = do
-  -- (buf, listenerId) <- runTranslatorDefault
+  (host, port) <- readNetworkCfg "client.cfg"
+  (clientThreadId, sendBuf, recvBuf) <- runClient host port
+
+  -- putMVar sendBuf "hello"
+  -- _ <- readMVar recvBuf
+  
+  -- putMVar buf "qqq"
 
   playIO
     (InWindow "Checkers" windowSize (0, 0))
@@ -129,7 +141,7 @@ runGame = do
     loadingScreenScene
     drawScene
     handleEvent
-    handleTick
+    (handleTick (sendBuf, recvBuf))
   return ()
 
 inArea :: (Float, Float) -> (Float, Float) -> (Float, Float) -> Bool

@@ -1,7 +1,7 @@
 module Board
   ( Piece(..)
   , Board(..)
-  , Color(..)
+  , Side(..)
   , Coord(..)
   , Field(..)
   , dumpBoard
@@ -25,14 +25,14 @@ import Util
   ( pullMaybeSnd
   )
 
-data Color 
+data Side 
   = Black 
   | White
   deriving (Show, Eq)
 
 data Piece 
-  = Man Color
-  | King Color
+  = Man Side
+  | King Side
   deriving (Show, Eq)
 
 newtype Field = Field { unField :: Maybe Piece }
@@ -68,8 +68,8 @@ generateArea :: Coord -> Coord -> [Coord]
 generateArea (Coord (x1, y1)) (Coord (x2, y2)) =
   filter (\(Coord (a, b)) -> (a + b) `mod` 2 == 0) [ Coord (i, j) | i <- [x1, x1 + 1 .. x2], j <- [y1, y1 + 1 .. y2] ]
 
--- testColor :: Color -> Field -> Bool
--- testColor color (Maybe (piece, pieceColor)) = (color == pieceColor)
+-- testSide :: Side -> Field -> Bool
+-- testSide color (Maybe (piece, pieceSide)) = (color == pieceSide)
 
 -- Coord must be valid
 -- moveA :: Board -> Coord -> [Board]
@@ -130,9 +130,9 @@ deserializeField _   = error "Unxpected characted in serialized string"
 deserializeBoard :: String -> Board
 deserializeBoard s = Board $ fromList $ map deserializeField s
 
--- succTake :: Color -> Board -> [Board]
+-- succTake :: Side -> Board -> [Board]
 
--- succMove :: Color -> Board -> [Board]
+-- succMove :: Side -> Board -> [Board]
 
 -- succ :: Board -> [Board]
 

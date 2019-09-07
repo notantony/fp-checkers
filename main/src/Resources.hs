@@ -7,7 +7,6 @@ module Resources
   )
 where
 
-
 import Data.FileEmbed
 import Data.ByteString(ByteString)
 import Graphics.Gloss.Data.Bitmap
