@@ -4,6 +4,8 @@ module Resources
   ( boardTex
   , blackManTex
   , whiteManTex
+  , blackKingTex
+  , whiteKingTex
   )
 where
 
@@ -31,3 +33,9 @@ blackManTex = importTex 100 100 $(embedFile "resources/b_man.rgba")
 
 whiteManTex :: Picture
 whiteManTex = importTex 100 100 $(embedFile "resources/w_man.rgba")
+
+blackKingTex :: Picture
+blackKingTex = importTex 100 100 $(embedFile "resources/b_king.rgba")
+
+whiteKingTex :: Picture
+whiteKingTex = importTex 100 100 $(embedFile "resources/w_king.rgba")

@@ -1,7 +1,5 @@
 module Server
   ( sendMsg
-  , localhost
-  , defaultPort
   , runClient
   , runServer
   )
@@ -69,11 +67,11 @@ runServer hostPref service = do
               runBroadcast socket
   serve hostPref service welcomeReciever
 
-localhost :: HostName
-localhost = "127.0.0.1"
+-- localhost :: HostName
+-- localhost = "127.0.0.1"
 
-defaultPort :: ServiceName
-defaultPort = "5050"
+-- defaultPort :: ServiceName
+-- defaultPort = "5050"
 
 -- runServerDefault :: IO ()
 -- runServerDefault = runServer (Host localhost) defaultPort

@@ -6,6 +6,7 @@ module Board
   , Field(..)
   , dumpBoard
   , startingPosition
+  , inBoardRange
   ) where
 
 import Data.Vector
@@ -46,19 +47,23 @@ newtype Coord = Coord { unCoord :: (Int, Int) }
 
 instance Enum Coord where
   fromEnum c@(Coord (x, y)) =
-    if x >= 8 || x < 0 || y >= 8 || y < 0
-    then error $ "Bad coord: " ++ (show c)
-    else x + y * 8
+    if inBoardRange (x, y)
+    then x + y * 8
+    else error $ "Bad coord: " ++ (show c)
   toEnum num = 
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
     else Coord ((num `mod` 8), (num `div` 8))
 
+inBoardRange :: (Int, Int) -> Bool
+inBoardRange (x, y) = 
+  x < 8 && x >= 0 && y < 8 && y >= 0
+
 getField :: Board -> Coord -> Maybe (Field)
 getField (Board v) (Coord (x, y)) =
-  if x >= 8 || x < 0 || y >= 8 || y < 0
-  then Nothing
-  else v !? (x + y * 8)
+  if inBoardRange (x, y)
+  then v !? (x + y * 8)
+  else Nothing
 
 getFieldUnsafe :: Board -> Coord -> Field
 getFieldUnsafe (Board v) c =
