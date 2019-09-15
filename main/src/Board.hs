@@ -39,7 +39,7 @@ data Piece
 newtype Field = Field { unField :: Maybe Piece }
   deriving (Show, Eq)
 
-newtype Board = Board { unBoard :: Vector (Field) }
+newtype Board = Board { unBoard :: Vector Field }
   deriving (Show, Eq)
 
 newtype Coord = Coord { unCoord :: (Int, Int) }

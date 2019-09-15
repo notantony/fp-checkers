@@ -6,6 +6,7 @@ module Resources
   , whiteManTex
   , blackKingTex
   , whiteKingTex
+  , dotTex
   )
 where
 
@@ -39,3 +40,6 @@ blackKingTex = importTex 100 100 $(embedFile "resources/b_king.rgba")
 
 whiteKingTex :: Picture
 whiteKingTex = importTex 100 100 $(embedFile "resources/w_king.rgba")
+
+dotTex :: Picture
+dotTex = importTex 100 100 $(embedFile "resources/dot.rgba")
