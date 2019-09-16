@@ -59,7 +59,7 @@ inBoardRange :: (Int, Int) -> Bool
 inBoardRange (x, y) = 
   x < 8 && x >= 0 && y < 8 && y >= 0
 
-getField :: Board -> Coord -> Maybe (Field)
+getField :: Board -> Coord -> Maybe Field
 getField (Board v) (Coord (x, y)) =
   if inBoardRange (x, y)
   then v !? (x + y * 8)
@@ -84,7 +84,7 @@ generateArea (Coord (x1, y1)) (Coord (x2, y2)) =
 --   in case 
 
 emptyBoard :: Board
-emptyBoard = Board $ fromList (take 64 (repeat (Field Nothing)))
+emptyBoard = Board $ fromList $ replicate 64 (Field Nothing)
 
 setPiece :: Piece -> Coord -> Board -> Board
 setPiece piece coord =
@@ -106,7 +106,7 @@ allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
 
 takePopulated :: Board -> [Coord] -> [Coord]
-takePopulated board coords = filter (\coord -> isJust $ unField $ getFieldUnsafe board coord) coords
+takePopulated board = filter (\coord -> isJust $ unField $ getFieldUnsafe board coord)
 
 dumpBoard :: Board -> [(Coord, Piece)]
 dumpBoard board = mapMaybe pullMaybeSnd merged

@@ -76,7 +76,6 @@ data Handler = Handler
 
 data Actor = Actor
   { aId      :: String
-  , aHandler :: Maybe Handler
   , aPicture :: Picture
   , aPrior   :: Int
   }
@@ -87,18 +86,16 @@ drawScene (Scene actors) = do
   return $ Translate x y $ Pictures $ map aPicture actors
 
 
-handleEvent :: Event -> Scene -> IO Scene
-handleEvent event scene@(Scene actors) = do
+handleEvent :: [Handler] -> Event -> Scene -> IO Scene
+handleEvent handlers event scene@(Scene actors) = do
   let
-    handlers :: [Handler]
-    handlers = catMaybes $ map aHandler actors
     mx :: Int
     mx = maximum $ map hPrior handlers
     actions :: [Event -> Scene -> IO Scene]
     actions = map hAction $ filter (\handler -> hPrior handler == mx) handlers
     pipe :: [Scene -> IO Scene]
     pipe = map (\op -> op event) actions
-  (Scene actors) <- (runPipe pipe) scene
+  (Scene actors) <- runPipe pipe scene
   return $ setupScene actors
 
 
@@ -118,7 +115,7 @@ handleTick (sendBuf, recvBuf) _ x = do
 --   tell [makeTextNormal (100, 100) "Hello"]
 
 decorate :: String -> Picture -> Actor
-decorate label pic = Actor{ aId = label, aHandler = Nothing, aPicture = pic, aPrior = 0 }
+decorate label pic = Actor{ aId = label, aPicture = pic, aPrior = 0 }
 
 mainMenuScene :: Scene
 mainMenuScene = Scene
@@ -137,7 +134,7 @@ windowSize :: Num a => (a, a)
 windowSize = (1080, 860)
 
 windowCenter :: Point
-windowCenter = (0.5) PA.* windowSize
+windowCenter = 0.5 PA.* windowSize
 
 boardBegin :: Num a => (a, a)
 boardBegin = (60, 60)
@@ -145,39 +142,35 @@ boardBegin = (60, 60)
 fieldSide :: Num a => a
 fieldSide = 100
 
--- hostGame :: Side -> IO () 
--- hostGame
-
--- joinGame :: MVar 
-
--- prepareGame :: MVar String -> Side -> IO ()
-
--- redrawBoard :: IORef Board -> IO Scene
--- redrawBoard boardPtr = do
---   board <- readIORef
---   return $ setupBoard board
-
 runGame :: IO ()
 runGame = do
   (host, port) <- readNetworkCfg "client.cfg"
   (clientThreadId, sendBuf, recvBuf) <- runClient host port
+
+  
+  -- aHandler = Just $ Handler 0 $ processQueue (boardPtr, queuePtr)
+  -- aHandler = Just $ Handler 0 flashField
+
+  -- boardPtr <- newIORef board
+  -- queuePtr <- newIORef []
 
   -- putMVar sendBuf "hello"
   -- _ <- readMVar recvBuf
   -- putMVar buf "qqq"
   
   pathPtr <- newIORef []
-  boardPtr <- newIORef startingPosition
-  boardScene <- setupBoard boardPtr
+  -- boardPtr <- newIORef startingPosition
+  -- boardScene <- 
 
   playIO
     (InWindow "Checkers" windowSize (0, 0))
     black
     10
-    boardScene
+    (makeBoard startingPosition)
+    -- boardScene
     -- loadingScreenScene
     drawScene
-    handleEvent
+    (handleEvent []) -- Add handlers
     (handleTick (sendBuf, recvBuf))
   return ()
 
@@ -200,14 +193,15 @@ flashField _ scene = return scene
 -- pushQueue :: Event -> Scene -> IO Scene
 -- pushQueue (EventKey KeyBackspace Down _ _) =
 
-clearQueue :: IORef Board -> Event -> Scene -> IO Scene
-clearQueue boardPtr (EventKey (Char 'r') Down _ _) (Scene actors) = do
-  board <- readIORef boardPtr
-  -- writeIORef boardPtr startingPosition
-  -- newBoard <- setupBoard boardPtr
-  -- return newBoard
-  return $ Scene $ filter (\actor -> (aId actor) /= "dot") actors
-clearQueue _ _ scene = return scene
+
+-- processQueue :: (IORef Board, IORef [Coord]) -> Event -> Scene -> IO Scene
+-- processQueue boardPtr (EventKey (Char 'r') Down _ _) (Scene actors) = do
+--   board <- readIORef boardPtr
+--   return $ Scene $ filter (\actor -> aId actor /= "dot") actors
+-- processQueue boardPtr (EventKey (Char 's') Down _ _) (Scene actors) = do
+--   board <- readIORef boardPtr
+--   return $ Scene $ filter (\actor -> aId actor /= "dot") actors
+-- processQueue _ _ scene = return scene
 
 coordToPoint :: Coord -> Point
 coordToPoint (Coord p) = fieldSide PA.* (fromIntegralPair p) PA.+ boardBegin
@@ -237,17 +231,26 @@ setupAtCoord tex label coord = decorate label placed
 setupScene :: [Actor] -> Scene
 setupScene actors = Scene $ sortBy (\a b -> compare (aPrior a) (aPrior b)) actors
 
-setupBoard :: IORef Board -> IO Scene
-setupBoard boardPtr = do
-  board <- readIORef boardPtr
+makeBoard :: Board -> Scene
+makeBoard board =
   let
     boardActor :: Actor
-    boardActor = Actor{ aId = "board", aHandler = Just $ Handler 0 flashField, aPicture = boardTex, aPrior = -1 }
-    queueManager :: Actor
-    queueManager = Actor{ aId = "queue", aHandler = Just $ Handler 0 $ clearQueue boardPtr, aPicture = Blank, aPrior = 0 }
-    -- queueManager = Handler 0 flashField >>= попробовать создавать очередь здесь 
+    boardActor = Actor{ aId = "board", aPicture = boardTex, aPrior = -1 }
     dumped :: [(Coord, Piece)]
     dumped = dumpBoard board
     pieces :: [Actor]
     pieces = map (uncurry . flip $ setupPiece) dumped
-  return $ setupScene $ queueManager : boardActor : pieces
+  in
+    setupScene $ boardActor : pieces
+
+-- hostGame :: Side -> IO () 
+-- hostGame
+
+-- joinGame :: MVar 
+
+-- prepareGame :: MVar String -> Side -> IO ()
+
+-- redrawBoard :: IORef Board -> IO Scene
+-- redrawBoard boardPtr = do
+--   board <- readIORef
+--   return $ makeBoard board
