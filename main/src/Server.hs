@@ -40,7 +40,7 @@ runServer hostPref service = do
   let
     welcomeReciever :: (Socket, SockAddr) -> IO ()
     welcomeReciever sockPair@(socket, sockAddr) = do
-      putStrLn $ "Connected: " ++ (show sockPair)
+      putStrLn $ "Connected: " ++ show sockPair
       _ <- runBroadcast socket
       return ()
     sendStorage :: Socket -> IO ()
@@ -52,11 +52,11 @@ runServer hostPref service = do
       buf <- recv socket 1024
       case buf of
         Nothing -> do
-          putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
+          putStrLn $ "Connection " ++ show socket ++ " was closed" 
           return []
         Just msg -> do
           let unpacked = unpack msg
-          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ (show socket) 
+          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket 
           if unpacked == "ping"
             then do
               sendStorage socket
@@ -67,33 +67,21 @@ runServer hostPref service = do
               runBroadcast socket
   serve hostPref service welcomeReciever
 
--- localhost :: HostName
--- localhost = "127.0.0.1"
-
--- defaultPort :: ServiceName
--- defaultPort = "5050"
-
--- runServerDefault :: IO ()
--- runServerDefault = runServer (Host localhost) defaultPort
-
--- runClientDefault :: IO (MVar String, ThreadId)
--- runClientDefault = runClient localhost defaultPort
-
 recvMsg :: Socket -> IO String
 recvMsg socket = do
   buf <- recv socket 1024
   case buf of
     Nothing -> do
-      putStrLn $ "Connection " ++ (show socket) ++ " was closed" 
+      putStrLn $ "Connection " ++ show socket ++ " was closed" 
       return []
     Just msg -> do
       let unpacked = unpack msg
-      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ (show socket)  
+      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket  
       return unpacked
 
 sendMsg :: String -> Socket -> IO ()
 sendMsg msg socket = do
-  putStrLn $ "Sending: \"" ++ msg ++ "\" to " ++ (show socket)
+  putStrLn $ "Sending: \"" ++ msg ++ "\" to " ++ show socket
   send socket $ pack msg
 
 runClient :: HostName -> ServiceName -> IO (ThreadId, MVar String, MVar String)

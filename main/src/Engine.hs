@@ -35,6 +35,7 @@ import Board
   , dumpBoard
   , startingPosition
   , inBoardRange
+  , getFieldUnsafe
   )
 import Resources
   ( boardTex
@@ -64,6 +65,7 @@ import Data.IORef
   , IORef
   , readIORef
   , writeIORef
+  , modifyIORef'
   )
 import Network.Simple.TCP
 
@@ -85,7 +87,6 @@ drawScene (Scene actors) = do
   let (x, y) = PA.negate windowCenter
   return $ Translate x y $ Pictures $ map aPicture actors
 
-
 handleEvent :: [Handler] -> Event -> Scene -> IO Scene
 handleEvent handlers event scene@(Scene actors) = do
   let
@@ -97,7 +98,6 @@ handleEvent handlers event scene@(Scene actors) = do
     pipe = map (\op -> op event) actions
   (Scene actors) <- runPipe pipe scene
   return $ setupScene actors
-
 
 handleTick :: (MVar String, MVar String) -> Float -> Scene -> IO Scene
 handleTick (sendBuf, recvBuf) _ x = do
@@ -128,8 +128,6 @@ loadingScreenScene = Scene
   [ decorate "loading_txt" $ makeTextNormal (400, 400) "Loading..."
   ]
 
---makeButton :: Handler -> Point -> String -> Actor
---makeButton (x, y) s =
 windowSize :: Num a => (a, a)
 windowSize = (1080, 860)
 
@@ -146,19 +144,37 @@ runGame :: IO ()
 runGame = do
   (host, port) <- readNetworkCfg "client.cfg"
   (clientThreadId, sendBuf, recvBuf) <- runClient host port
-
   
-  -- aHandler = Just $ Handler 0 $ processQueue (boardPtr, queuePtr)
+  queuePtr <- newIORef []
+  boardPtr <- newIORef startingPosition
+
+  let
+    pushQueueAction :: Event -> Scene -> IO Scene
+    pushQueueAction = makeFieldAction $ \coord scene@(Scene actors) -> do
+      board <- readIORef boardPtr
+      case unField $ getFieldUnsafe board coord of
+        Just _ -> return scene
+        Nothing -> do
+          modifyIORef' queuePtr (\q -> coord : q) --- TODO: remove repeat
+          return $ Scene $ setupAtCoord dotTex "dot" coord : actors
+    releaseQueueAction :: Event -> Scene -> IO Scene
+    releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do
+      q <- readIORef queuePtr
+      writeIORef queuePtr []
+      -- putMVar sendBuf
+      return $ Scene $ filter (\actor -> aId actor /= "dot") actors
+    releaseQueueAction _ scene = return scene
+    
+  -- let
+    -- queueHandler :: Event -> 
+    -- queueHandler = processQueue (boardPtr, queuePtr)
   -- aHandler = Just $ Handler 0 flashField
 
-  -- boardPtr <- newIORef board
   -- queuePtr <- newIORef []
 
   -- putMVar sendBuf "hello"
   -- _ <- readMVar recvBuf
   -- putMVar buf "qqq"
-  
-  pathPtr <- newIORef []
   -- boardPtr <- newIORef startingPosition
   -- boardScene <- 
 
@@ -166,49 +182,35 @@ runGame = do
     (InWindow "Checkers" windowSize (0, 0))
     black
     10
-    (makeBoard startingPosition)
     -- boardScene
-    -- loadingScreenScene
+    (makeBoard startingPosition)
     drawScene
-    (handleEvent []) -- Add handlers
+    (handleEvent 
+      [ Handler{ hAction = pushQueueAction, hPrior = 0 }
+      , Handler{ hAction = releaseQueueAction, hPrior = 0 }
+      ]
+    )
     (handleTick (sendBuf, recvBuf))
   return ()
 
--- inArea :: (Float, Float) -> (Float, Float) -> (Float, Float) -> Bool
--- inArea (x1, y1) (x2, y2) (x, y) =
---   (x1 <= x && x <= x2) && (y1 <= y && y <= y2)
-
-flashField :: Event -> Scene -> IO Scene
-flashField (EventKey (MouseButton LeftButton) Down _ point) scene@(Scene actors) = do
+makeFieldAction :: (Coord -> Scene -> IO Scene) -> Event -> Scene -> IO Scene
+makeFieldAction action (EventKey (MouseButton LeftButton) Down _ point) = do
   let
     normalized :: Point
     normalized = point PA.+ windowCenter
     mCoord :: Maybe Coord
     mCoord = pointToCoord normalized
-  return $ case mCoord of
-    Nothing -> scene
-    Just coord -> Scene $ setupAtCoord dotTex "dot" coord : actors 
-flashField _ scene = return scene
-
--- pushQueue :: Event -> Scene -> IO Scene
--- pushQueue (EventKey KeyBackspace Down _ _) =
-
-
--- processQueue :: (IORef Board, IORef [Coord]) -> Event -> Scene -> IO Scene
--- processQueue boardPtr (EventKey (Char 'r') Down _ _) (Scene actors) = do
---   board <- readIORef boardPtr
---   return $ Scene $ filter (\actor -> aId actor /= "dot") actors
--- processQueue boardPtr (EventKey (Char 's') Down _ _) (Scene actors) = do
---   board <- readIORef boardPtr
---   return $ Scene $ filter (\actor -> aId actor /= "dot") actors
--- processQueue _ _ scene = return scene
+  case mCoord of
+    Nothing -> return
+    Just coord -> action coord
+makeFieldAction _ _ = return  
 
 coordToPoint :: Coord -> Point
 coordToPoint (Coord p) = fieldSide PA.* (fromIntegralPair p) PA.+ boardBegin
 
 pointToCoord :: Point -> Maybe Coord
 pointToCoord p = 
-  if inBoardRange (a, b) 
+  if inBoardRange (a, b)
   then Just $ Coord (a, b)
   else Nothing
   where
@@ -250,7 +252,5 @@ makeBoard board =
 
 -- prepareGame :: MVar String -> Side -> IO ()
 
--- redrawBoard :: IORef Board -> IO Scene
--- redrawBoard boardPtr = do
---   board <- readIORef
---   return $ makeBoard board
+--makeButton :: Handler -> Point -> String -> Actor
+--makeButton (x, y) s =

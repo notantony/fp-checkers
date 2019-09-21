@@ -7,6 +7,7 @@ module Board
   , dumpBoard
   , startingPosition
   , inBoardRange
+  , getFieldUnsafe
   ) where
 
 import Data.Vector
@@ -54,6 +55,9 @@ instance Enum Coord where
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
     else Coord ((num `mod` 8), (num `div` 8))
+
+sumCoord :: Coord -> Coord -> Coord
+sumCoord (x1, y1) (x2, y2) = Coord (x1 + x2, y1 + y2)
 
 inBoardRange :: (Int, Int) -> Bool
 inBoardRange (x, y) = 
@@ -130,7 +134,7 @@ deserializeField '1' = Field $ Just $ Man Black
 deserializeField '2' = Field $ Just $ Man White
 deserializeField '3' = Field $ Just $ King Black
 deserializeField '4' = Field $ Just $ King Black
-deserializeField _   = error "Unxpected characted in serialized string" 
+deserializeField _   = error "Unxpected character in serialized string" 
 
 deserializeBoard :: String -> Board
 deserializeBoard s = Board $ fromList $ map deserializeField s
@@ -141,3 +145,60 @@ deserializeBoard s = Board $ fromList $ map deserializeField s
 
 -- succ :: Board -> [Board]
 
+getSide :: Piece -> Side
+getSide (Man side) = side
+getSide (King side) = side
+
+testSide :: Side -> Piece -> Bool
+testSide side = (==) side . getSide
+
+
+-- getPossibleMoves :: Piece -> [((Int, Int), Bool)]  -- Bool
+-- getPossibleMoves (Man _)
+
+-- getPossibleMoves
+-- checkEat :: Board -> Coord -> Bool
+
+data Dir
+  = NW
+  | NE
+  | SE
+  | SW
+  deriving (Show, Eq)
+
+data Move 
+  = Eat Dir
+  | Walk Dir
+  deriving (Show, Eq)
+
+dirToXY :: Dir -> (Int, Int)
+dirToXY NW = (-1, 1)
+dirToXY NE = (1, 1)
+dirToXY SE = (1, -1)
+dirToXY NW = (-1, -1)
+
+checkMove :: Move -> Side -> Coord -> Board -> Bool 
+checkMove (Walk dir) side coord board = 
+  isNothing 
+    where
+      dst :: (Int, Int)
+      dst = dirToXY dir
+
+-- checkEatAt :: Side -> Board -> Coord -> [Move]
+-- checkEatAt side board coord = testMove
+--   where
+--     testMove :: Bool
+--     testMove = isJust $ do
+--       piece <- unField $ getFieldUnsafe board coord
+--       let
+--         sideOk :: Bool
+--         sideOk = testSide side piece
+--       piece return $
+
+
+--   in case mPiece of
+--     Nothing -> False
+--     Just piece -> check 
+
+
+-- Serializable
