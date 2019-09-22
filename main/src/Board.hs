@@ -8,6 +8,7 @@ module Board
   , startingPosition
   , inBoardRange
   , getFieldUnsafe
+  , Serializable(..)
   ) where
 
 import Data.Vector
@@ -20,6 +21,7 @@ import Data.Vector
   )
 import Data.Maybe
   ( isJust
+  , isNothing
   , mapMaybe
   )
 import Control.Monad(join)
@@ -54,10 +56,17 @@ instance Enum Coord where
   toEnum num = 
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
-    else Coord ((num `mod` 8), (num `div` 8))
+    else Coord (num `mod` 8, num `div` 8)
+
+getSide :: Piece -> Side
+getSide (Man side) = side
+getSide (King side) = side
 
 sumCoord :: Coord -> Coord -> Coord
-sumCoord (x1, y1) (x2, y2) = Coord (x1 + x2, y1 + y2)
+sumCoord (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 + x2, y1 + y2)
+
+subCoord :: Coord -> Coord -> Coord
+subCoord (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 - x2, y1 - y2)
 
 inBoardRange :: (Int, Int) -> Bool
 inBoardRange (x, y) = 
@@ -77,87 +86,64 @@ generateArea :: Coord -> Coord -> [Coord]
 generateArea (Coord (x1, y1)) (Coord (x2, y2)) =
   filter (\(Coord (a, b)) -> (a + b) `mod` 2 == 0) [ Coord (i, j) | i <- [x1, x1 + 1 .. x2], j <- [y1, y1 + 1 .. y2] ]
 
--- testSide :: Side -> Field -> Bool
--- testSide color (Maybe (piece, pieceSide)) = (color == pieceSide)
-
--- Coord must be valid
--- moveA :: Board -> Coord -> [Board]
--- moveA board (Coord (x, y))@c =
---   let
---     field = getFieldUnsafe board c
---   in case 
+toField :: Piece -> Field
+toField = Field . Just
 
 emptyBoard :: Board
 emptyBoard = Board $ fromList $ replicate 64 (Field Nothing)
 
-setPiece :: Piece -> Coord -> Board -> Board
-setPiece piece coord =
-  setPieces [(coord, piece)]
+setField :: Field -> Coord -> Board -> Board
+setField field coord =
+  setFields [(coord, field)]
 
-setPieces :: [(Coord, Piece)] -> Board -> Board
-setPieces csps (Board v) =
-  Board (v // (map (\(c, p) -> (fromEnum c, Field (Just p))) csps))
+setFields :: [(Coord, Field)] -> Board -> Board
+setFields target (Board v) =
+  Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
 
 startingPosition :: Board
-startingPosition = whitePieces `setPieces` (setPieces blackPieces emptyBoard)  
+startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
   where
-    whitePieces :: [(Coord, Piece)]
-    whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (Man White))
-    blackPieces :: [(Coord, Piece)]
-    blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (Man Black))
+    whitePieces :: [(Coord, Field)]
+    whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
+    blackPieces :: [(Coord, Field)]
+    blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
 
 allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
 
 takePopulated :: Board -> [Coord] -> [Coord]
-takePopulated board = filter (\coord -> isJust $ unField $ getFieldUnsafe board coord)
+takePopulated board = filter (isJust . unField . getFieldUnsafe board)
 
 dumpBoard :: Board -> [(Coord, Piece)]
 dumpBoard board = mapMaybe pullMaybeSnd merged
   where
     merged :: [(Coord, Maybe Piece)]
     merged = map (\coord -> (coord, unField $ getFieldUnsafe board coord)) allArea
-    
-serializeField :: Field -> Char
-serializeField (Field Nothing)              = '0'
-serializeField (Field (Just (Man Black)))   = '1'
-serializeField (Field (Just (Man White)))   = '2'
-serializeField (Field (Just (King Black)))  = '3'
-serializeField (Field (Just (King Black)))  = '4'
 
-serializeBoard :: Board -> String
-serializeBoard (Board v) = map serializeField (toList v)
+class Serializable a where
+  serialize :: a -> String
+  deserialize :: String -> a
 
-deserializeField :: Char -> Field
-deserializeField '0' = Field Nothing
-deserializeField '1' = Field $ Just $ Man Black
-deserializeField '2' = Field $ Just $ Man White
-deserializeField '3' = Field $ Just $ King Black
-deserializeField '4' = Field $ Just $ King Black
-deserializeField _   = error "Unxpected character in serialized string" 
+instance Serializable Field where
+  serialize (Field Nothing)              = "0"
+  serialize (Field (Just (Man Black)))   = "1"
+  serialize (Field (Just (Man White)))   = "2"
+  serialize (Field (Just (King Black)))  = "3"
+  serialize (Field (Just (King Black)))  = "4"
+  
+  deserialize "0" = Field Nothing
+  deserialize "1" = toField $ Man Black
+  deserialize "2" = toField $ Man White
+  deserialize "3" = toField $ King Black
+  deserialize "4" = toField $ King Black
 
-deserializeBoard :: String -> Board
-deserializeBoard s = Board $ fromList $ map deserializeField s
+instance (Serializable a) => Serializable [a] where
+  serialize = show . (map serialize)
+  deserialize = deserialize . read
 
--- succTake :: Side -> Board -> [Board]
-
--- succMove :: Side -> Board -> [Board]
-
--- succ :: Board -> [Board]
-
-getSide :: Piece -> Side
-getSide (Man side) = side
-getSide (King side) = side
-
-testSide :: Side -> Piece -> Bool
-testSide side = (==) side . getSide
-
-
--- getPossibleMoves :: Piece -> [((Int, Int), Bool)]  -- Bool
--- getPossibleMoves (Man _)
-
--- getPossibleMoves
--- checkEat :: Board -> Coord -> Bool
+instance Serializable Board where
+  serialize = serialize . toList . unBoard
+  deserialize = Board . fromList . deserialize
 
 data Dir
   = NW
@@ -171,34 +157,67 @@ data Move
   | Walk Dir
   deriving (Show, Eq)
 
-dirToXY :: Dir -> (Int, Int)
-dirToXY NW = (-1, 1)
-dirToXY NE = (1, 1)
-dirToXY SE = (1, -1)
-dirToXY NW = (-1, -1)
+dirToCoord :: Dir -> Coord
+dirToCoord NW = Coord (-1, 1)
+dirToCoord NE = Coord (1, 1)
+dirToCoord SE = Coord (1, -1)
+dirToCoord SW = Coord (-1, -1)
 
-checkMove :: Move -> Side -> Coord -> Board -> Bool 
-checkMove (Walk dir) side coord board = 
-  isNothing 
-    where
-      dst :: (Int, Int)
-      dst = dirToXY dir
+coordToDir :: Coord -> Maybe Dir
+coordToDir Coord (-1, 1) = NW 
+coordToDir Coord (1, 1) = NE 
+coordToDir Coord (1, -1) = SE 
+coordToDir Coord (-1, -1) = SW 
 
--- checkEatAt :: Side -> Board -> Coord -> [Move]
--- checkEatAt side board coord = testMove
---   where
---     testMove :: Bool
---     testMove = isJust $ do
---       piece <- unField $ getFieldUnsafe board coord
---       let
---         sideOk :: Bool
---         sideOk = testSide side piece
---       piece return $
+getDir :: Move -> Dir
+getDir (Eat dir) = dir
+getDir (Walk dir) = dir
 
+-- makeMove :: Point -> Point -> Maybe Move
+-- makeMove 
 
---   in case mPiece of
---     Nothing -> False
---     Just piece -> check 
+-- TODO: "Turkish strike"?
+tryMove :: Move -> Piece -> Coord -> Board -> Maybe (Board, Coord) -- Assuming side is correct
+tryMove (Walk dir) piece coord board =
+  case unField =<< getField board dst of
+    Nothing -> Just (setFields [(coord, Field Nothing), (dst, toField piece)] board, dst)
+    Just _ -> Nothing
+  where
+    dst :: Coord
+    dst = coord `sumCoord` (dirToCoord dir)
+    side :: Side
+    side = getSide piece
+tryMove (Eat dir) piece coord board =
+  if isEmptyDst && isEnemyVictim
+  then Just (setFields [(coord, Field Nothing), (victimCoord, Field Nothing), (dst, toField piece)] board, dst)
+  else Nothing
+  where
+    dirCoord :: Coord
+    dirCoord = dirToCoord dir
+    victimCoord :: Coord
+    victimCoord = coord `sumCoord` dirCoord
+    dst :: Coord
+    dst =  victimCoord `sumCoord` dirCoord
+    isEmptyDst :: Bool
+    isEmptyDst = isNothing $ unField =<< getField board dst
+    isEnemyVictim :: Bool
+    isEnemyVictim = 
+      case unField =<< getField board victimCoord of
+        Nothing -> False
+        Just victim -> getSide victim /= getSide piece
 
+manDir :: Side -> [Dir]
+manDir Black = [NE, NW]
+manDir White = [SE, SW]
 
--- Serializable
+checkMove :: Side -> Move -> Board -> Coord -> Bool
+checkMove side move board coord = 
+  case unField $ getFieldUnsafe board coord of
+    Nothing -> False
+    Just piece -> checkSide piece && testMove piece
+  where
+    checkSide :: Piece -> Bool 
+    checkSide = ((==) side) . getSide
+    testMove :: Piece -> Bool
+    testMove (Man _ ) = elem (getDir move) (manDir side)
+    testMove (King _) = True

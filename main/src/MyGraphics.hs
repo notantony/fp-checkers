@@ -20,9 +20,6 @@ import Resources
   , whiteKingTex
   )
 
---loadTextures :: IO ()
---someFunc = putStrLn "someFunc"
-
 makeText :: Float -> Point -> String -> Picture
 makeText size (x, y) s = Color white $ Translate x y (Scale size size (Text s))
 

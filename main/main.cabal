@@ -1,7 +1,7 @@
 name:                main
 version:             0.1.0.0
 synopsis:            Synopsis
-description:         Simple checkers game for ITMO fp course
+description:         Simple checkers game for ITMO functional programming course
 
 homepage:            https://github.com/notantony/fp-checkers/
 license:             MIT

@@ -161,22 +161,8 @@ runGame = do
     releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do
       q <- readIORef queuePtr
       writeIORef queuePtr []
-      -- putMVar sendBuf
       return $ Scene $ filter (\actor -> aId actor /= "dot") actors
     releaseQueueAction _ scene = return scene
-    
-  -- let
-    -- queueHandler :: Event -> 
-    -- queueHandler = processQueue (boardPtr, queuePtr)
-  -- aHandler = Just $ Handler 0 flashField
-
-  -- queuePtr <- newIORef []
-
-  -- putMVar sendBuf "hello"
-  -- _ <- readMVar recvBuf
-  -- putMVar buf "qqq"
-  -- boardPtr <- newIORef startingPosition
-  -- boardScene <- 
 
   playIO
     (InWindow "Checkers" windowSize (0, 0))
