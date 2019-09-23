@@ -8,6 +8,7 @@ module Board
   , startingPosition
   , inBoardRange
   , getFieldUnsafe
+  , makeMove
   , Serializable(..)
   ) where
 
@@ -163,18 +164,30 @@ dirToCoord NE = Coord (1, 1)
 dirToCoord SE = Coord (1, -1)
 dirToCoord SW = Coord (-1, -1)
 
-coordToDir :: Coord -> Maybe Dir
-coordToDir Coord (-1, 1) = NW 
-coordToDir Coord (1, 1) = NE 
-coordToDir Coord (1, -1) = SE 
-coordToDir Coord (-1, -1) = SW 
+coordToDir :: Coord -> Dir
+coordToDir (Coord (-1, 1)) = NW 
+coordToDir (Coord (1, 1)) = NE 
+coordToDir (Coord (1, -1)) = SE 
+coordToDir (Coord (-1, -1)) = SW 
 
 getDir :: Move -> Dir
 getDir (Eat dir) = dir
 getDir (Walk dir) = dir
 
--- makeMove :: Point -> Point -> Maybe Move
--- makeMove 
+makeMove :: Coord -> Coord -> Maybe Move
+makeMove a b
+  | dist == 2 = Just $ Walk $ coordToDir diff
+  | dist == 8 = Just $ Eat $ coordToDir $ Coord (x `div` 2, y `div` 2)
+  | otherwise = Nothing
+  where 
+    diff :: Coord
+    diff = a `subCoord` b
+    x :: Int
+    x = fst $ unCoord diff
+    y :: Int
+    y = snd $ unCoord diff
+    dist :: Int
+    dist = x ^ 2 + y ^ 2
 
 -- TODO: "Turkish strike"?
 tryMove :: Move -> Piece -> Coord -> Board -> Maybe (Board, Coord) -- Assuming side is correct

@@ -36,6 +36,7 @@ import Board
   , startingPosition
   , inBoardRange
   , getFieldUnsafe
+  , makeMove
   )
 import Resources
   ( boardTex
@@ -105,15 +106,6 @@ handleTick (sendBuf, recvBuf) _ x = do
   _ <- tryTakeMVar recvBuf
   return x
 
--- drawScene :: Scene -> Picture
--- drawScene MainMenu = 
---   Pictures $ execWriter $ do
---   tell [toBold $ makeTextLarge (-100, 200) "Main menu"]
---   tell [makeTextNormal (0, 0) "Play"]
---   tell [t]
---   tell [makeTextNormal (1, 0) "Hello"]
---   tell [makeTextNormal (100, 100) "Hello"]
-
 decorate :: String -> Picture -> Actor
 decorate label pic = Actor{ aId = label, aPicture = pic, aPrior = 0 }
 
@@ -145,22 +137,43 @@ runGame = do
   (host, port) <- readNetworkCfg "client.cfg"
   (clientThreadId, sendBuf, recvBuf) <- runClient host port
   
-  queuePtr <- newIORef []
+  coordPtr <- newIORef Nothing
+  moveQueuePtr <- newIORef []
   boardPtr <- newIORef startingPosition
 
   let
+    setCoord :: Maybe Coord -> IO ()
+    setCoord = writeIORef coordPtr
+
     pushQueueAction :: Event -> Scene -> IO Scene
     pushQueueAction = makeFieldAction $ \coord scene@(Scene actors) -> do
       board <- readIORef boardPtr
-      case unField $ getFieldUnsafe board coord of
-        Just _ -> return scene
-        Nothing -> do
-          modifyIORef' queuePtr (\q -> coord : q) --- TODO: remove repeat
-          return $ Scene $ setupAtCoord dotTex "dot" coord : actors
+      lastCoordM <- readIORef coordPtr
+      let
+        field :: Field 
+        field = getFieldUnsafe board coord
+        addDot :: Scene 
+        addDot = Scene $ setupAtCoord dotTex 1 "dot" coord : actors
+      case lastCoordM of
+        Nothing -> case unField field of
+          Nothing -> return scene
+          (Just _) -> do
+            setCoord $ Just coord
+            return addDot
+        (Just lastCoord) ->
+          case makeMove coord lastCoord of
+            Nothing -> return scene
+            (Just move) -> do
+              modifyIORef' moveQueuePtr (\q -> move : q)
+              setCoord $ Just coord
+              return addDot
+              -- return $ Scene $ setupAtCoord dotTex "dot" coord : actors
+    
     releaseQueueAction :: Event -> Scene -> IO Scene
     releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do
-      q <- readIORef queuePtr
-      writeIORef queuePtr []
+      -- q <- readIORef queuePtr
+      setCoord Nothing
+      writeIORef moveQueuePtr []
       return $ Scene $ filter (\actor -> aId actor /= "dot") actors
     releaseQueueAction _ scene = return scene
 
@@ -208,10 +221,10 @@ pointToCoord p =
     b = floor $ snd coord
 
 setupPiece :: Piece -> Coord -> Actor
-setupPiece piece = setupAtCoord (makePiece piece) "piece"
+setupPiece piece = setupAtCoord (makePiece piece) 0 "piece"
 
-setupAtCoord :: Picture -> String -> Coord -> Actor 
-setupAtCoord tex label coord = decorate label placed
+setupAtCoord :: Picture -> Int -> String -> Coord -> Actor 
+setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrior = prior}
   where
     placed :: Picture
     placed = (uncurry Translate) (coordToPoint coord) tex
