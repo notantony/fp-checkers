@@ -37,6 +37,7 @@ import Board
   , inBoardRange
   , getFieldUnsafe
   , makeMove
+  , checkDir
   )
 import Resources
   ( boardTex
@@ -137,37 +138,47 @@ runGame = do
   (host, port) <- readNetworkCfg "client.cfg"
   (clientThreadId, sendBuf, recvBuf) <- runClient host port
   
+  let
+    side :: Side
+    side = White
+
   coordPtr <- newIORef Nothing
+  bodyPtr <- newIORef (Man side)
   moveQueuePtr <- newIORef []
   boardPtr <- newIORef startingPosition
 
   let
     setCoord :: Maybe Coord -> IO ()
     setCoord = writeIORef coordPtr
+    setBody :: Piece -> IO ()
+    setBody = writeIORef bodyPtr
 
     pushQueueAction :: Event -> Scene -> IO Scene
     pushQueueAction = makeFieldAction $ \coord scene@(Scene actors) -> do
       board <- readIORef boardPtr
       lastCoordM <- readIORef coordPtr
+      body <- readIORef bodyPtr
       let
-        field :: Field 
+        field :: Field
         field = getFieldUnsafe board coord
-        addDot :: Scene 
+        addDot :: Scene
         addDot = Scene $ setupAtCoord dotTex 1 "dot" coord : actors
       case lastCoordM of
         Nothing -> case unField field of
           Nothing -> return scene
-          (Just _) -> do
+          (Just newBody) -> do
             setCoord $ Just coord
+            setBody newBody
             return addDot
         (Just lastCoord) ->
           case makeMove coord lastCoord of
             Nothing -> return scene
-            (Just move) -> do
-              modifyIORef' moveQueuePtr (\q -> move : q)
-              setCoord $ Just coord
-              return addDot
-              -- return $ Scene $ setupAtCoord dotTex "dot" coord : actors
+            (Just move) -> if checkDir side move body 
+              then do
+                modifyIORef' moveQueuePtr (\q -> move : q)
+                setCoord $ Just coord
+                return addDot
+              else return scene
     
     releaseQueueAction :: Event -> Scene -> IO Scene
     releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do

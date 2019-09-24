@@ -9,6 +9,9 @@ module Board
   , inBoardRange
   , getFieldUnsafe
   , makeMove
+  , tryMove
+  -- , checkMove
+  , checkDir
   , Serializable(..)
   ) where
 
@@ -102,12 +105,12 @@ setFields target (Board v) =
   Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
 
 startingPosition :: Board
-startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
-  where
-    whitePieces :: [(Coord, Field)]
-    whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
-    blackPieces :: [(Coord, Field)]
-    blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
+-- startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
+--   where
+--     whitePieces :: [(Coord, Field)]
+--     whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
+--     blackPieces :: [(Coord, Field)]
+--     blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
 
 allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
@@ -220,17 +223,42 @@ tryMove (Eat dir) piece coord board =
         Just victim -> getSide victim /= getSide piece
 
 manDir :: Side -> [Dir]
-manDir Black = [NE, NW]
-manDir White = [SE, SW]
+manDir White = [NE, NW]
+manDir Black = [SE, SW]
 
-checkMove :: Side -> Move -> Board -> Coord -> Bool
-checkMove side move board coord = 
-  case unField $ getFieldUnsafe board coord of
-    Nothing -> False
-    Just piece -> checkSide piece && testMove piece
-  where
-    checkSide :: Piece -> Bool 
-    checkSide = ((==) side) . getSide
-    testMove :: Piece -> Bool
-    testMove (Man _ ) = elem (getDir move) (manDir side)
-    testMove (King _) = True
+checkDir :: Side -> Move -> Piece -> Bool
+checkDir side move (Man _ ) = elem (getDir move) (manDir side)
+checkDir _ _ (King _) = True
+
+-- getSided :: Side -> Board -> Coord -> Maybe Piece
+-- getSided side = case unField $ getFieldUnsafe board coord of
+--   Nothing -> False
+--   Just piece -> testside 
+--   ((==) side) . getSide
+
+--   case unField $ getFieldUnsafe board coord of
+--     Nothing -> False
+--     Just piece -> testside 
+
+-- checkMove :: Side -> Move -> Board -> Coord -> Bool
+-- checkMove side move board coord = 
+--   case unField $ getFieldUnsafe board coord of
+--     Nothing -> False
+--     Just piece -> testSide side piece && checkDir move piece
+
+wm :: Field
+wm = toField $ Man White
+bm :: Field
+bm = toField $ Man Black
+c :: Int -> Int -> Coord
+c a b = Coord (a, b)
+startingPosition = polygon1
+
+polygon1 :: Board
+polygon1 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
+
+polygon2 :: Board
+polygon2 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
+
+polygon3 :: Board
+polygon3 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
