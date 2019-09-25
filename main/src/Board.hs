@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Board
   ( Piece(..)
   , Board(..)
@@ -15,6 +17,9 @@ module Board
   , Serializable(..)
   ) where
 
+
+import Language.Haskell.TH
+import Control.Monad -- TODO
 import Data.Vector
   ( (!)
   , (!?)
@@ -31,6 +36,7 @@ import Data.Maybe
 import Control.Monad(join)
 import Util
   ( pullMaybeSnd
+  , mkConv -- TODO
   )
 
 data Side 
@@ -44,10 +50,10 @@ data Piece
   deriving (Show, Eq)
 
 newtype Field = Field { unField :: Maybe Piece }
-  deriving (Show, Eq)
+  deriving (Eq)
 
 newtype Board = Board { unBoard :: Vector Field }
-  deriving (Show, Eq)
+  deriving (Eq)
 
 newtype Coord = Coord { unCoord :: (Int, Int) }
   deriving (Show, Eq)
@@ -105,12 +111,12 @@ setFields target (Board v) =
   Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
 
 startingPosition :: Board
--- startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
---   where
---     whitePieces :: [(Coord, Field)]
---     whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
---     blackPieces :: [(Coord, Field)]
---     blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
+startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
+  where
+    whitePieces :: [(Coord, Field)]
+    whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
+    blackPieces :: [(Coord, Field)]
+    blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
 
 allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
@@ -124,30 +130,59 @@ dumpBoard board = mapMaybe pullMaybeSnd merged
     merged :: [(Coord, Maybe Piece)]
     merged = map (\coord -> (coord, unField $ getFieldUnsafe board coord)) allArea
 
-class Serializable a where
+class (Show a, Read a) => Serializable a where
   serialize :: a -> String
+  serialize = show
   deserialize :: String -> a
+  deserialize = read
 
+instance Show Field where
+  show (Field Nothing)              = "_"
+  show (Field (Just (Man Black)))   = "b"
+  show (Field (Just (Man White)))   = "w"
+  show (Field (Just (King Black)))  = "B"
+  show (Field (Just (King White)))  = "W"
+
+
+-- generateShowRead :: String -> Q Exp
+-- generateShowRead s = LitE StringL
+
+
+-- www = sas
+--   where 
+$(mkConv "sas" (1, "White"))
+
+-- instance Show Field where
+--   show _ = "wqe"
 instance Serializable Field where
-  serialize (Field Nothing)              = "0"
-  serialize (Field (Just (Man Black)))   = "1"
-  serialize (Field (Just (Man White)))   = "2"
-  serialize (Field (Just (King Black)))  = "3"
-  serialize (Field (Just (King Black)))  = "4"
-  
-  deserialize "0" = Field Nothing
-  deserialize "1" = toField $ Man Black
-  deserialize "2" = toField $ Man White
-  deserialize "3" = toField $ King Black
-  deserialize "4" = toField $ King Black
+  serialize = show
+  deserialize = read
+
+readSample sample obj str = if sample == str then [(obj, "")] else []
+instance Read Field where
+  readsPrec 0 = readSample "_" $ Field Nothing
+  readsPrec 0 = readSample "_" $ toField $ Man Black
+  readsPrec 0 = readSample "_" $ toField $ Man White
+  readsPrec 0 = readSample "_" $ toField $ King Black
+  readsPrec 0 = readSample "_" $ toField $ King Black
+  -- readsPrec 0 "1" =  $ 
+  -- readsPrec 0 "2" =  $ 
+  -- readsPrec 0 "3" =  $ 
+  -- readsPrec 0 "4" =  $ 
+
+instance Serializable Board where
 
 instance (Serializable a) => Serializable [a] where
   serialize = show . (map serialize)
   deserialize = deserialize . read
 
-instance Serializable Board where
-  serialize = serialize . toList . unBoard
-  deserialize = Board . fromList . deserialize
+instance Show Board where
+  show _ = ""
+
+instance Read Board where
+  readsPrec 0 _ = [] 
+  -- serialize = serialize . toList . unBoard
+  -- read = Board . fromList . rea
 
 data Dir
   = NW
@@ -252,7 +287,8 @@ bm :: Field
 bm = toField $ Man Black
 c :: Int -> Int -> Coord
 c a b = Coord (a, b)
-startingPosition = polygon1
+
+-- startingPosition = polygon1
 
 polygon1 :: Board
 polygon1 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard

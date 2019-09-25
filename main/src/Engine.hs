@@ -38,6 +38,7 @@ import Board
   , getFieldUnsafe
   , makeMove
   , checkDir
+  , Serializable(..)
   )
 import Resources
   ( boardTex
@@ -101,12 +102,6 @@ handleEvent handlers event scene@(Scene actors) = do
   (Scene actors) <- runPipe pipe scene
   return $ setupScene actors
 
-handleTick :: (MVar String, MVar String) -> Float -> Scene -> IO Scene
-handleTick (sendBuf, recvBuf) _ x = do
-  _ <- tryPutMVar sendBuf "hi"
-  _ <- tryTakeMVar recvBuf
-  return x
-
 decorate :: String -> Picture -> Actor
 decorate label pic = Actor{ aId = label, aPicture = pic, aPrior = 0 }
 
@@ -144,7 +139,7 @@ runGame = do
 
   coordPtr <- newIORef Nothing
   bodyPtr <- newIORef (Man side)
-  moveQueuePtr <- newIORef []
+  queuePtr <- newIORef []
   boardPtr <- newIORef startingPosition
 
   let
@@ -175,18 +170,31 @@ runGame = do
             Nothing -> return scene
             (Just move) -> if checkDir side move body 
               then do
-                modifyIORef' moveQueuePtr (\q -> move : q)
+                modifyIORef' queuePtr (\q -> move : q)
                 setCoord $ Just coord
                 return addDot
               else return scene
     
     releaseQueueAction :: Event -> Scene -> IO Scene
     releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do
-      -- q <- readIORef queuePtr
+      q <- readIORef queuePtr
+      -- putMVar sendBuf $ serialize q
       setCoord Nothing
-      writeIORef moveQueuePtr []
+      writeIORef queuePtr []
       return $ Scene $ filter (\actor -> aId actor /= "dot") actors
     releaseQueueAction _ scene = return scene
+
+    handleTick :: Float -> Scene -> IO Scene
+    handleTick _ x = do
+      recieved <- tryTakeMVar recvBuf
+      case recieved of
+        Nothing -> return x
+        Just boardStr -> do
+          let
+            newBoard :: Board
+            newBoard = deserialize boardStr
+          writeIORef boardPtr newBoard
+          return $ makeBoard newBoard
 
   playIO
     (InWindow "Checkers" windowSize (0, 0))
@@ -195,12 +203,12 @@ runGame = do
     -- boardScene
     (makeBoard startingPosition)
     drawScene
-    (handleEvent 
+    ( handleEvent 
       [ Handler{ hAction = pushQueueAction, hPrior = 0 }
       , Handler{ hAction = releaseQueueAction, hPrior = 0 }
       ]
     )
-    (handleTick (sendBuf, recvBuf))
+    handleTick
   return ()
 
 makeFieldAction :: (Coord -> Scene -> IO Scene) -> Event -> Scene -> IO Scene
@@ -243,7 +251,7 @@ setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrio
 setupScene :: [Actor] -> Scene
 setupScene actors = Scene $ sortBy (\a b -> compare (aPrior a) (aPrior b)) actors
 
-makeBoard :: Board -> Scene
+makeBoard :: Board -> Scene -- TODO: must eat
 makeBoard board =
   let
     boardActor :: Actor

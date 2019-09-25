@@ -2,6 +2,7 @@ module Server
   ( sendMsg
   , runClient
   , runServer
+  , startingPosition
   )
   where
 
@@ -33,20 +34,25 @@ import Data.Foldable
 import Data.List
   ( elemIndex
   )
+import Board
+  ( startingPosition
+  , Serializable(..)
+  )
 
 runServer :: HostPreference -> ServiceName -> IO ()
 runServer hostPref service = do
-  storage <- newIORef "wew"
+  boardPtr <- newIORef startingPosition
+  players <- newIORef (Nothing, Nothing)
   let
     welcomeReciever :: (Socket, SockAddr) -> IO ()
     welcomeReciever sockPair@(socket, sockAddr) = do
       putStrLn $ "Connected: " ++ show sockPair
       _ <- runBroadcast socket
       return ()
-    sendStorage :: Socket -> IO ()
-    sendStorage socket = do
-      content <- readIORef storage
-      sendMsg content socket
+    sendBoard :: Socket -> IO ()
+    sendBoard socket = do
+      board <- readIORef boardPtr
+      sendMsg "ss" {- (serialize board) -} socket
     runBroadcast :: Socket -> IO [ByteString]
     runBroadcast socket = do
       buf <- recv socket 1024
@@ -59,11 +65,12 @@ runServer hostPref service = do
           putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket 
           if unpacked == "ping"
             then do
-              sendStorage socket
+              -- sendBoard socket
+              sendMsg "pong" socket
               runBroadcast socket
             else do
-              atomicModifyIORef' storage $ \_ -> (unpacked, ())
-              sendStorage socket
+              -- atomicModifyIORef' storage $ \_ -> (unpacked, ())
+              sendBoard socket
               runBroadcast socket
   serve hostPref service welcomeReciever
 

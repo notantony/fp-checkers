@@ -1,11 +1,16 @@
+{-# LANGUAGE TemplateHaskell #-} -- TODO
+
 module Util
   ( pullMaybeSnd
   , runPipe
   , readNetworkCfg
   , fromIntegralPair
+  , mkConv
   )
   where
 
+    
+import Language.Haskell.TH
 import Control.Monad
   ( (>=>)
   )
@@ -31,3 +36,8 @@ readNetworkCfg filename =
 
 fromIntegralPair :: (Integral a, Integral b, Num c, Num d) => (a, b) -> (c, d)
 fromIntegralPair (a, b) = (fromIntegral a, fromIntegral b)
+
+mkConv :: String -> (Int, String) -> Q [Dec]
+mkConv name qw = do
+  tt <- [| qw |]
+  return $ FunD (mkName name) [Clause [] (NormalB tt) []] : []

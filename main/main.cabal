@@ -33,6 +33,7 @@ library
                      , file-embed
                      , bytestring
                      , mtl
+                     , template-haskell
   default-language:    Haskell2010
 
 executable checkers
