@@ -1,25 +1,24 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Board
   ( Piece(..)
   , Board(..)
   , Side(..)
   , Coord(..)
   , Field(..)
+  , Move(..)
   , dumpBoard
   , startingPosition
   , inBoardRange
   , getFieldUnsafe
   , makeMove
-  , tryMove
+  , chainMoves
   -- , checkMove
   , checkDir
-  , Serializable(..)
+  , getPiece
+  , switchSide
+  , getPossibleMoves
+  , tryMove
   ) where
 
-
-import Language.Haskell.TH
-import Control.Monad -- TODO
 import Data.Vector
   ( (!)
   , (!?)
@@ -33,10 +32,18 @@ import Data.Maybe
   , isNothing
   , mapMaybe
   )
-import Control.Monad(join)
+import Control.Monad(
+  join
+  )
 import Util
   ( pullMaybeSnd
-  , mkConv -- TODO
+  , Marge(..)
+  , Serializable(..)
+  , makeSerialization
+  )
+import MyTH 
+  ( mkConv -- TODO
+  , mkShow
   )
 
 data Side 
@@ -44,16 +51,51 @@ data Side
   | White
   deriving (Show, Eq)
 
+instance Read Side where 
+  readsPrec _ ('w' : other) = [(White, other)]  
+  readsPrec _ ('b' : other) = [(Black, other)]
+
+instance Serializable Side where
+  serialize = show
+  deserialize = read
+
+instance Enum Side where
+  fromEnum White = 0
+  fromEnum Black = 1
+  toEnum 0 = White
+  toEnum 1 = Black
+
+switchSide :: Side -> Side
+switchSide Black = White
+switchSide White = Black
+
 data Piece 
   = Man Side
   | King Side
   deriving (Show, Eq)
 
 newtype Field = Field { unField :: Maybe Piece }
-  deriving (Eq)
+  deriving (Show, Eq)
 
+fieldSerialization :: (Field -> String, String -> Field)
+fieldSerialization = makeSerialization
+  [ (Field Nothing, "_")
+  , (Field (Just (Man Black)), "b")
+  , (Field (Just (Man White)), "w")
+  , (Field (Just (King Black)), "B")
+  , (Field (Just (King White)), "W")
+  ]
+
+instance Serializable Field where
+  serialize = fst fieldSerialization 
+  deserialize = snd fieldSerialization
+  
 newtype Board = Board { unBoard :: Vector Field }
-  deriving (Eq)
+  deriving (Show, Eq)
+  
+instance Serializable Board where
+  serialize = serialize . toList . unBoard
+  deserialize = Board . fromList . deserialize
 
 newtype Coord = Coord { unCoord :: (Int, Int) }
   deriving (Show, Eq)
@@ -67,6 +109,10 @@ instance Enum Coord where
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
     else Coord (num `mod` 8, num `div` 8)
+
+instance Serializable Coord where
+  serialize = show . fromEnum
+  deserialize = toEnum . read
 
 getSide :: Piece -> Side
 getSide (Man side) = side
@@ -91,6 +137,13 @@ getField (Board v) (Coord (x, y)) =
 getFieldUnsafe :: Board -> Coord -> Field
 getFieldUnsafe (Board v) c =
   v ! fromEnum c
+
+getPiece :: Side -> Coord -> Board -> Maybe Piece
+getPiece side coord board = do
+  piece <- unField $ getFieldUnsafe board coord
+  if getSide piece == side
+    then Just piece
+    else Nothing
 
 generateArea :: Coord -> Coord -> [Coord]
 generateArea (Coord (x1, y1)) (Coord (x2, y2)) =
@@ -130,60 +183,6 @@ dumpBoard board = mapMaybe pullMaybeSnd merged
     merged :: [(Coord, Maybe Piece)]
     merged = map (\coord -> (coord, unField $ getFieldUnsafe board coord)) allArea
 
-class (Show a, Read a) => Serializable a where
-  serialize :: a -> String
-  serialize = show
-  deserialize :: String -> a
-  deserialize = read
-
-instance Show Field where
-  show (Field Nothing)              = "_"
-  show (Field (Just (Man Black)))   = "b"
-  show (Field (Just (Man White)))   = "w"
-  show (Field (Just (King Black)))  = "B"
-  show (Field (Just (King White)))  = "W"
-
-
--- generateShowRead :: String -> Q Exp
--- generateShowRead s = LitE StringL
-
-
--- www = sas
---   where 
-$(mkConv "sas" (1, "White"))
-
--- instance Show Field where
---   show _ = "wqe"
-instance Serializable Field where
-  serialize = show
-  deserialize = read
-
-readSample sample obj str = if sample == str then [(obj, "")] else []
-instance Read Field where
-  readsPrec 0 = readSample "_" $ Field Nothing
-  readsPrec 0 = readSample "_" $ toField $ Man Black
-  readsPrec 0 = readSample "_" $ toField $ Man White
-  readsPrec 0 = readSample "_" $ toField $ King Black
-  readsPrec 0 = readSample "_" $ toField $ King Black
-  -- readsPrec 0 "1" =  $ 
-  -- readsPrec 0 "2" =  $ 
-  -- readsPrec 0 "3" =  $ 
-  -- readsPrec 0 "4" =  $ 
-
-instance Serializable Board where
-
-instance (Serializable a) => Serializable [a] where
-  serialize = show . (map serialize)
-  deserialize = deserialize . read
-
-instance Show Board where
-  show _ = ""
-
-instance Read Board where
-  readsPrec 0 _ = [] 
-  -- serialize = serialize . toList . unBoard
-  -- read = Board . fromList . rea
-
 data Dir
   = NW
   | NE
@@ -191,10 +190,31 @@ data Dir
   | SW
   deriving (Show, Eq)
 
+dirSerializarion :: (Dir -> String, String -> Dir)
+dirSerializarion = makeSerialization 
+  [ (NW, "0")
+  , (NE, "1")
+  , (SW, "2")
+  , (SE, "3")
+  ]
+
+instance Serializable Dir where
+  serialize = fst dirSerializarion
+  deserialize = snd dirSerializarion 
+
 data Move 
   = Eat Dir
   | Walk Dir
   deriving (Show, Eq)
+
+instance Serializable Move where
+  serialize (Walk dir) = 'w' : serialize dir
+  serialize (Eat dir) = 'e' : serialize dir
+  deserialize str@(char : chars)
+    | char == 'w' = Walk $ deserialize chars
+    | char == 'e' = Eat $ deserialize chars
+    | otherwise = error $ "Cannot deserialize Walk from" ++ str -- TODO: TH?
+  deserialize _ = error "Cannot deserialize Walk from empty string"
 
 dirToCoord :: Dir -> Coord
 dirToCoord NW = Coord (-1, 1)
@@ -212,6 +232,21 @@ getDir :: Move -> Dir
 getDir (Eat dir) = dir
 getDir (Walk dir) = dir
 
+pieceDirs :: Piece -> [Dir]
+pieceDirs (Man side) = manDir side
+  where
+    manDir :: Side -> [Dir]
+    manDir White = [NE, NW]
+    manDir Black = [SE, SW]
+pieceDirs (King _) = allDir
+  where
+    allDir :: [Dir]
+    allDir = [NE, NW, SE, SW]
+
+checkDir :: Move -> Piece -> Bool
+checkDir move piece = elem (getDir move) (pieceDirs piece)
+checkDir _ (King _) = True
+
 makeMove :: Coord -> Coord -> Maybe Move
 makeMove a b
   | dist == 2 = Just $ Walk $ coordToDir diff
@@ -220,25 +255,24 @@ makeMove a b
   where 
     diff :: Coord
     diff = a `subCoord` b
-    x :: Int
-    x = fst $ unCoord diff
-    y :: Int
-    y = snd $ unCoord diff
+    (x, y) = unCoord diff :: (Int, Int)
     dist :: Int
     dist = x ^ 2 + y ^ 2
 
 -- TODO: "Turkish strike"?
-tryMove :: Move -> Piece -> Coord -> Board -> Maybe (Board, Coord) -- Assuming side is correct
-tryMove (Walk dir) piece coord board =
-  case unField =<< getField board dst of
-    Nothing -> Just (setFields [(coord, Field Nothing), (dst, toField piece)] board, dst)
-    Just _ -> Nothing
+tryMove :: Piece -> Move -> Coord -> Board -> Maybe (Board, Coord) -- Assuming side is correct
+tryMove piece (Walk dir) coord board =
+  case getField board dst of
+    Nothing -> Nothing
+    Just (Field mPiece) -> case mPiece of
+      Nothing -> Just (setFields [(coord, Field Nothing), (dst, toField piece)] board, dst)
+      (Just _) -> Nothing
   where
     dst :: Coord
     dst = coord `sumCoord` (dirToCoord dir)
     side :: Side
     side = getSide piece
-tryMove (Eat dir) piece coord board =
+tryMove piece (Eat dir) coord board =
   if isEmptyDst && isEnemyVictim
   then Just (setFields [(coord, Field Nothing), (victimCoord, Field Nothing), (dst, toField piece)] board, dst)
   else Nothing
@@ -248,22 +282,40 @@ tryMove (Eat dir) piece coord board =
     victimCoord :: Coord
     victimCoord = coord `sumCoord` dirCoord
     dst :: Coord
-    dst =  victimCoord `sumCoord` dirCoord
+    dst = victimCoord `sumCoord` dirCoord
     isEmptyDst :: Bool
-    isEmptyDst = isNothing $ unField =<< getField board dst
+    isEmptyDst =
+      case getField board dst of
+        Nothing -> False
+        Just a -> isNothing $ unField a
     isEnemyVictim :: Bool
     isEnemyVictim = 
       case unField =<< getField board victimCoord of
         Nothing -> False
         Just victim -> getSide victim /= getSide piece
 
-manDir :: Side -> [Dir]
-manDir White = [NE, NW]
-manDir Black = [SE, SW]
+chainMoves :: Piece -> [Move] -> Coord -> Board -> Maybe (Board, Coord)
+chainMoves piece moves coord board = foldr foldSingle (Just (board, coord)) moves
+  where
+    foldSingle :: Move -> Maybe (Board, Coord) -> Maybe (Board, Coord)
+    foldSingle move mPos = do
+      (curBoard, curCoord) <- mPos
+      tryMove piece move curCoord curBoard
 
-checkDir :: Side -> Move -> Piece -> Bool
-checkDir side move (Man _ ) = elem (getDir move) (manDir side)
-checkDir _ _ (King _) = True
+getPossibleMoves :: Board -> Coord -> [(Board, Coord)]
+getPossibleMoves board coord =
+  case unField $ getFieldUnsafe board coord of
+    Nothing -> []
+    (Just piece) -> processPiece piece
+  where
+    processPiece :: Piece -> [(Board, Coord)]
+    processPiece piece = mapMaybe (\move -> tryMove piece move coord board) moves
+      where
+        dirs :: [Dir]
+        dirs = pieceDirs piece
+        moves :: [Move]
+        moves = concatMap (\dir -> [Eat dir, Walk dir]) dirs
+
 
 -- getSided :: Side -> Board -> Coord -> Maybe Piece
 -- getSided side = case unField $ getFieldUnsafe board coord of
@@ -287,8 +339,6 @@ bm :: Field
 bm = toField $ Man Black
 c :: Int -> Int -> Coord
 c a b = Coord (a, b)
-
--- startingPosition = polygon1
 
 polygon1 :: Board
 polygon1 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard

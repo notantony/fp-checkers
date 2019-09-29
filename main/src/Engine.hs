@@ -19,6 +19,7 @@ import System.Environment
 import Control.Monad.Writer(execWriter, tell)
 import Data.Maybe
   ( catMaybes
+  , fromMaybe
   )
 import MyGraphics
   ( makeTextLarge
@@ -32,22 +33,27 @@ import Board
   , Piece(..)
   , Side(..)
   , Field(..)
+  , Move(..)
   , dumpBoard
   , startingPosition
   , inBoardRange
   , getFieldUnsafe
   , makeMove
   , checkDir
-  , Serializable(..)
+  , getPiece
+  , getPossibleMoves
+  , tryMove
   )
 import Resources
   ( boardTex
   , dotTex
+  , ghostTex
   )
 import Util
   ( runPipe
   , readNetworkCfg
   , fromIntegralPair
+  , Serializable(..)
   )
 import Control.Concurrent
   ( forkIO
@@ -56,6 +62,7 @@ import Control.Concurrent
   , tryPutMVar
   , readMVar
   , tryTakeMVar
+  , takeMVar
   )
 import Server
   ( runClient
@@ -128,87 +135,118 @@ boardBegin = (60, 60)
 fieldSide :: Num a => a
 fieldSide = 100
 
-runGame :: IO ()
-runGame = do
+runGame :: Side -> IO ()
+runGame side = do
   (host, port) <- readNetworkCfg "client.cfg"
   (clientThreadId, sendBuf, recvBuf) <- runClient host port
-  
-  let
-    side :: Side
-    side = White
 
-  coordPtr <- newIORef Nothing
+  let
+    register :: IO (Maybe String)
+    register = do
+      putMVar sendBuf (show side)
+      ans <- takeMVar recvBuf
+      return $ if ans == "ok"
+      then Nothing
+      else Just $ "Register failed: \"" ++ ans ++ "\""
+
+  startPtr <- newIORef Nothing
+  premovePtr <- newIORef Nothing
   bodyPtr <- newIORef (Man side)
   queuePtr <- newIORef []
   boardPtr <- newIORef startingPosition
 
   let
-    setCoord :: Maybe Coord -> IO ()
-    setCoord = writeIORef coordPtr
-    setBody :: Piece -> IO ()
-    setBody = writeIORef bodyPtr
+    clearQueue :: IO ()
+    clearQueue = do
+      writeIORef premovePtr Nothing
+      writeIORef startPtr Nothing
+      writeIORef queuePtr []
 
     pushQueueAction :: Event -> Scene -> IO Scene
     pushQueueAction = makeFieldAction $ \coord scene@(Scene actors) -> do
-      board <- readIORef boardPtr
-      lastCoordM <- readIORef coordPtr
-      body <- readIORef bodyPtr
+      premoveM <- readIORef premovePtr
       let
-        field :: Field
-        field = getFieldUnsafe board coord
-        addDot :: Scene
-        addDot = Scene $ setupAtCoord dotTex 1 "dot" coord : actors
-      case lastCoordM of
-        Nothing -> case unField field of
-          Nothing -> return scene
-          (Just newBody) -> do
-            setCoord $ Just coord
-            setBody newBody
-            return addDot
-        (Just lastCoord) ->
-          case makeMove coord lastCoord of
+        setupPremove :: (Board, Coord) -> IO Scene
+        setupPremove (board, coord) = do
+          writeIORef premovePtr $ Just (coord, board)    
+          return $ nextScene coord nextCoords -- TODO: spirit ManySteps
+          where
+            nextCoords :: [Coord]
+            nextCoords = map snd $ getPossibleMoves board coord
+            nextScene :: Coord -> [Coord] -> Scene -- TODO: filter old ndots
+            nextScene dotCoord nextCoords = Scene $ ghost : nextDots ++ filtered 
+              where
+                ghost :: Actor
+                ghost = setupAtCoord ghostTex 1 "ghost" coord
+                nextDots :: [Actor]
+                nextDots = map (setupAtCoord dotTex 2 "ndot") nextCoords
+                filtered :: [Actor]
+                filtered = filter ((/=) "ndot" . aId) actors
+      case premoveM of
+        Nothing -> do
+          board <- readIORef boardPtr
+          case getPiece side coord board of -- TODO: refactor
             Nothing -> return scene
-            (Just move) -> if checkDir side move body 
+            (Just body) -> do
+              writeIORef startPtr $ Just coord
+              writeIORef bodyPtr body
+              setupPremove (board, coord)
+        (Just (lastCoord, board)) -> do
+          body <- readIORef bodyPtr
+          let
+            tryResult :: Maybe (Move, (Board, Coord))
+            tryResult = do
+              move <- makeMove coord lastCoord
+              if checkDir move body
               then do
-                modifyIORef' queuePtr (\q -> move : q)
-                setCoord $ Just coord
-                return addDot
-              else return scene
-    
+                result <- tryMove body move lastCoord board
+                return (move, result)
+              else Nothing 
+          case tryResult of
+            Nothing -> return scene
+            Just (move, newPremove) -> do
+              newScene <- setupPremove newPremove
+              modifyIORef' queuePtr (\q -> move : q)
+              return newScene
+
     releaseQueueAction :: Event -> Scene -> IO Scene
-    releaseQueueAction (EventKey (Char 'r') Down _ _) (Scene actors) = do
-      q <- readIORef queuePtr
-      -- putMVar sendBuf $ serialize q
-      setCoord Nothing
-      writeIORef queuePtr []
-      return $ Scene $ filter (\actor -> aId actor /= "dot") actors
+    releaseQueueAction (EventKey (Char 'r') Down _ _) scene@(Scene actors) = do
+      mCoord <- readIORef startPtr
+      case mCoord of 
+        Nothing -> return scene
+        (Just coord) -> do
+          q <- readIORef queuePtr
+          putMVar sendBuf $ serialize (q, coord)
+          clearQueue
+          return scene
+      -- return $ Scene $ filter (\actor -> aId actor /= "dot") actors
     releaseQueueAction _ scene = return scene
 
     handleTick :: Float -> Scene -> IO Scene
-    handleTick _ x = do
+    handleTick _ scene = do
       recieved <- tryTakeMVar recvBuf
       case recieved of
-        Nothing -> return x
+        Nothing -> return scene
         Just boardStr -> do
           let
             newBoard :: Board
             newBoard = deserialize boardStr
+          clearQueue
           writeIORef boardPtr newBoard
           return $ makeBoard newBoard
 
-  playIO
-    (InWindow "Checkers" windowSize (0, 0))
-    black
-    10
-    -- boardScene
-    (makeBoard startingPosition)
-    drawScene
-    ( handleEvent 
-      [ Handler{ hAction = pushQueueAction, hPrior = 0 }
-      , Handler{ hAction = releaseQueueAction, hPrior = 0 }
-      ]
-    )
-    handleTick
+  status <- register
+  case status of
+    (Just errorMsg) -> putStrLn errorMsg
+    Nothing -> playIO
+        (InWindow "Checkers" windowSize (0, 0))
+        black
+        10
+        -- boardScene
+        (makeBoard startingPosition)
+        drawScene
+        (handleEvent [ Handler{ hAction = pushQueueAction, hPrior = 0 }, Handler{ hAction = releaseQueueAction, hPrior = 0 }])
+        handleTick
   return ()
 
 makeFieldAction :: (Coord -> Scene -> IO Scene) -> Event -> Scene -> IO Scene
@@ -251,7 +289,7 @@ setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrio
 setupScene :: [Actor] -> Scene
 setupScene actors = Scene $ sortBy (\a b -> compare (aPrior a) (aPrior b)) actors
 
-makeBoard :: Board -> Scene -- TODO: must eat
+makeBoard :: Board -> Scene -- TODO: must-eat check
 makeBoard board =
   let
     boardActor :: Actor

@@ -25,6 +25,7 @@ library
                      , Engine
                      , Util
                      , Server
+                     , MyTH
   ghc-options:         -Wall
   build-depends:       base >= 4.9.0.0
                      , network-simple
