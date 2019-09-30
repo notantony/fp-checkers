@@ -17,6 +17,7 @@ module Board
   , switchSide
   , getPossibleMoves
   , tryMove
+  , finalize
   ) where
 
 import Data.Vector
@@ -51,13 +52,15 @@ data Side
   | White
   deriving (Show, Eq)
 
-instance Read Side where 
-  readsPrec _ ('w' : other) = [(White, other)]  
-  readsPrec _ ('b' : other) = [(Black, other)]
+sideSerialization :: (Side -> String, String -> Side)
+sideSerialization = makeSerialization
+  [ (White, "w")
+  , (Black, "b")
+  ]
 
 instance Serializable Side where
-  serialize = show
-  deserialize = read
+  serialize = fst sideSerialization 
+  deserialize = snd sideSerialization
 
 instance Enum Side where
   fromEnum White = 0
@@ -86,10 +89,14 @@ fieldSerialization = makeSerialization
   , (Field (Just (King White)), "W")
   ]
 
+promote :: Piece -> Piece
+promote (Man color) = King color
+promote (King color) = King color
+
 instance Serializable Field where
   serialize = fst fieldSerialization 
   deserialize = snd fieldSerialization
-  
+
 newtype Board = Board { unBoard :: Vector Field }
   deriving (Show, Eq)
   
@@ -269,7 +276,7 @@ tryMove piece (Walk dir) coord board =
       (Just _) -> Nothing
   where
     dst :: Coord
-    dst = coord `sumCoord` (dirToCoord dir)
+    dst = coord `sumCoord` dirToCoord dir
     side :: Side
     side = getSide piece
 tryMove piece (Eat dir) coord board =
@@ -316,6 +323,16 @@ getPossibleMoves board coord =
         moves :: [Move]
         moves = concatMap (\dir -> [Eat dir, Walk dir]) dirs
 
+finalize :: Board -> Board
+finalize board = setFields promoted board
+  where
+    getRow :: Coord -> Int
+    getRow =  snd . unCoord
+    needPromotion :: (Coord, Piece) -> Bool
+    needPromotion (coord, piece) = getSide piece == White && getRow coord == 7 || getSide piece == Black && getRow coord == 0
+    promoted :: [(Coord, Field)]
+    promoted = map (\(coord, piece) -> (coord, toField $ promote piece)) $ filter needPromotion (dumpBoard board)
+  
 
 -- getSided :: Side -> Board -> Coord -> Maybe Piece
 -- getSided side = case unField $ getFieldUnsafe board coord of

@@ -45,6 +45,7 @@ import Board
   , getPiece
   , Coord(..)
   , switchSide
+  , finalize
   )
 import Util
   ( Serializable(..)
@@ -52,6 +53,13 @@ import Util
   )
 import Text.Read
   ( readMaybe   
+  )
+import Data.Maybe
+  ( catMaybes
+  , isJust
+  )
+import Control.Monad
+  ( when
   )
 
 -- Shalyto?
@@ -68,10 +76,11 @@ runServer hostPref service = do
       putStrLn $ "Connected: " ++ show sockPair
       runBroadcast socket
       return ()
-    sendBoard :: Socket -> IO ()
-    sendBoard socket = do
+    broadcastBoard :: Side -> IO ()
+    broadcastBoard side = do
       board <- readIORef boardPtr
-      sendMsg (serialize board) socket
+      mPlayers <- readIORef playersPtr
+      mapM_ (sendMsg $ serialize (board, side)) (catMaybes mPlayers) 
     runBroadcast :: Socket -> IO ()
     runBroadcast socket = do
       buf <- recv socket 1024
@@ -91,43 +100,48 @@ runServer hostPref service = do
             else do
               state <- readIORef statePtr
               case state of
-                WaitStart -> 
-                  case readMaybe unpacked :: Maybe Side of
-                    Nothing -> do
-                      sendMsg "Unexpected color" socket 
-                      return ()
-                    Just side -> do
-                      let
-                        fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
-                        fillSlot arr = case slot of
-                          Nothing -> (update id (Just socket) arr, True)
-                          (Just _) -> (arr, False)
-                          where
-                            id :: Int
-                            id = fromEnum side
-                            slot :: Maybe Socket
-                            slot = arr !! id  
-                      result <- atomicModifyIORef' playersPtr fillSlot
-                      if result 
-                      then do
-                        sendMsg "ok" socket
-                        runBroadcast socket
-                      else do
-                        sendMsg "Slot is not empty" socket
-                        return ()
+                WaitStart -> do
+                  let
+                    side :: Side
+                    side = deserialize unpacked
+                    fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
+                    fillSlot arr = case slot of
+                      Nothing -> (update id (Just socket) arr, True)
+                      (Just _) -> (arr, False)
+                      where
+                        id :: Int
+                        id = fromEnum side
+                        slot :: Maybe Socket
+                        slot = arr !! id  
+                  result <- atomicModifyIORef' playersPtr fillSlot
+                  if result 
+                  then do
+                    sendMsg "ok" socket
+                    players <- readIORef playersPtr
+                    when (all isJust players) $ do
+                      atomicWriteIORef statePtr $ WaitMove White 
+                      broadcastBoard White
+                    runBroadcast socket
+                  else sendMsg "Slot is not empty" socket
                 (WaitMove side) -> do
+                  curBoard <- readIORef boardPtr
                   let
                     (moves, coord) = deserialize unpacked :: ([Move], Coord)
-                  curBoard <- readIORef boardPtr
-                  case getPiece side coord curBoard of
-                    Nothing -> return ()
-                    (Just piece) ->
-                      case chainMoves piece moves coord curBoard of
-                        Nothing -> return ()
-                        (Just (board, _)) -> do
-                          atomicWriteIORef statePtr (WaitMove $ switchSide side) 
-                          writeIORef boardPtr board
-                  sendBoard socket
+                    mNewBoard :: Maybe Board
+                    mNewBoard = do
+                      when (null moves) Nothing
+                      piece <- getPiece side coord curBoard
+                      (board, _) <- chainMoves piece moves coord curBoard
+                      return $ finalize board
+                  case mNewBoard of
+                    Nothing -> broadcastBoard side
+                    (Just board) -> do
+                      let
+                        newSide :: Side
+                        newSide = switchSide side
+                      atomicWriteIORef statePtr (WaitMove $ switchSide side)
+                      writeIORef boardPtr board
+                      broadcastBoard newSide
               runBroadcast socket
   serve hostPref service welcomeReciever
 
@@ -156,7 +170,9 @@ runClient host service = do
     listenLoop :: (Socket, SockAddr) -> IO ()
     listenLoop sockPair@(socket, _) = do
       msg <- takeMVar sendBuf
-      sendMsg msg socket
+      if msg == "nop"
+      then return ()
+      else sendMsg msg socket
       response <- recvMsg socket
       putMVar recvBuf response
       listenLoop sockPair

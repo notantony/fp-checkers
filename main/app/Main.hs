@@ -15,7 +15,7 @@ readColor :: IO Side
 readColor = do
   putStrLn "Select color: \"w\" for white \"b\" for black."
   line <- getLine
-  case readMaybe line of
+  case parseColor line of
     (Just c) -> return c
     Nothing -> do
       putStrLn "Unexpected color, try again"
@@ -23,7 +23,9 @@ readColor = do
   where
     parseColor :: String -> Maybe Side
     parseColor "w" = Just White
+    parseColor "white" = Just White
     parseColor "b" = Just Black
+    parseColor "black" = Just Black
     parseColor _ = Nothing
   
 
@@ -33,3 +35,5 @@ main = withSocketsDo $ do
   runGame side
 
 --TODO: style, warnings, tests, TH?, imports
+--TH: trivial-read, intance Serializable
+--add board to broadcastBoard
