@@ -57,6 +57,7 @@ import Util
   , readNetworkCfg
   , fromIntegralPair
   , Serializable(..)
+  , headMaybe
   )
 import Control.Concurrent
   ( forkIO
@@ -127,7 +128,7 @@ loadingScreenScene = Scene
   ]
 
 windowSize :: Num a => (a, a)
-windowSize = (1080, 860)
+windowSize = (860, 860)
 
 windowCenter :: Point
 windowCenter = 0.5 PA.* windowSize
@@ -153,7 +154,7 @@ runGame side = do
       else Just $ "Register failed: \"" ++ ans ++ "\""
     waitStart :: IO ()
     waitStart = do
-      putStrLn "Waiting other players"
+      putStrLn "Waiting for other players"
       putMVar sendBuf "nop" 
       _ <- takeMVar recvBuf
       when (side == Black) $ putMVar sendBuf "nop"
@@ -174,10 +175,12 @@ runGame side = do
     pushQueueAction = makeFieldAction $ \coord scene@(Scene actors) -> do
       let
         setupPremove :: (Board, Coord) -> IO Scene
-        setupPremove (board, coord) = return $ nextScene coord nextCoords
+        setupPremove (board, coord) = do
+          q <- readIORef queuePtr
+          return $ nextScene coord (nextCoords $ headMaybe q)
           where
-            nextCoords :: [Coord]
-            nextCoords = map snd $ getPossibleMoves board coord
+            nextCoords :: Maybe Move -> [Coord]
+            nextCoords lastMoveM = map snd $ getPossibleMoves lastMoveM board coord
             nextScene :: Coord -> [Coord] -> Scene
             nextScene dotCoord nextCoords = Scene $ ghost : nextDots ++ filtered 
               where
@@ -211,13 +214,12 @@ runGame side = do
               then do
                 result <- chainMoves body (move: q) start board
                 return (move, result)
-              else Nothing 
+              else Nothing
           case tryResult of
             Nothing -> return scene
             Just (move, newPremove) -> do
-              newScene <- setupPremove newPremove
               modifyIORef' queuePtr (\q -> move : q)
-              return newScene
+              setupPremove newPremove
 
     releaseQueueAction :: Event -> Scene -> IO Scene
     releaseQueueAction (EventKey (Char 'r') Down _ _) scene@(Scene actors) = do
@@ -302,7 +304,7 @@ setupAtCoord :: Picture -> Int -> String -> Coord -> Actor
 setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrior = prior}
   where
     placed :: Picture
-    placed = (uncurry Translate) (coordToPoint coord) tex
+    placed = uncurry Translate (coordToPoint coord) tex
 
 setupScene :: [Actor] -> Scene
 setupScene actors = Scene $ sortBy (\a b -> compare (aPrior a) (aPrior b)) actors

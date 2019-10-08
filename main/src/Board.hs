@@ -33,8 +33,8 @@ import Data.Maybe
   , isNothing
   , mapMaybe
   )
-import Control.Monad(
-  join
+import Control.Monad
+  ( join
   )
 import Util
   ( pullMaybeSnd
@@ -207,7 +207,7 @@ dirSerializarion = makeSerialization
 
 instance Serializable Dir where
   serialize = fst dirSerializarion
-  deserialize = snd dirSerializarion 
+  deserialize = snd dirSerializarion
 
 data Move 
   = Eat Dir
@@ -302,15 +302,23 @@ tryMove piece (Eat dir) coord board =
         Just victim -> getSide victim /= getSide piece
 
 chainMoves :: Piece -> [Move] -> Coord -> Board -> Maybe (Board, Coord)
-chainMoves piece moves coord board = foldr foldSingle (Just (board, coord)) moves
+chainMoves piece moves coord board = 
+  if checkEat 
+  then foldr foldSingle (Just (board, coord)) moves
+  else Nothing
   where
+    isEat :: Move -> Bool
+    isEat (Eat _) = True
+    isEat _ = False
+    checkEat :: Bool
+    checkEat = all isEat moves || length moves == 1
     foldSingle :: Move -> Maybe (Board, Coord) -> Maybe (Board, Coord)
     foldSingle move mPos = do
       (curBoard, curCoord) <- mPos
       tryMove piece move curCoord curBoard
 
-getPossibleMoves :: Board -> Coord -> [(Board, Coord)]
-getPossibleMoves board coord =
+getPossibleMoves :: Maybe Move -> Board -> Coord -> [(Board, Coord)]
+getPossibleMoves lastMove board coord =
   case unField $ getFieldUnsafe board coord of
     Nothing -> []
     (Just piece) -> processPiece piece
@@ -321,7 +329,12 @@ getPossibleMoves board coord =
         dirs :: [Dir]
         dirs = pieceDirs piece
         moves :: [Move]
-        moves = concatMap (\dir -> [Eat dir, Walk dir]) dirs
+        moves = concatMap (\dir -> 
+          case lastMove of
+            Nothing -> [Eat dir, Walk dir]
+            Just (Eat _) -> [Eat dir]
+            Just (Walk _) -> []
+          ) dirs
 
 finalize :: Board -> Board
 finalize board = setFields promoted board
@@ -332,23 +345,6 @@ finalize board = setFields promoted board
     needPromotion (coord, piece) = getSide piece == White && getRow coord == 7 || getSide piece == Black && getRow coord == 0
     promoted :: [(Coord, Field)]
     promoted = map (\(coord, piece) -> (coord, toField $ promote piece)) $ filter needPromotion (dumpBoard board)
-  
-
--- getSided :: Side -> Board -> Coord -> Maybe Piece
--- getSided side = case unField $ getFieldUnsafe board coord of
---   Nothing -> False
---   Just piece -> testside 
---   ((==) side) . getSide
-
---   case unField $ getFieldUnsafe board coord of
---     Nothing -> False
---     Just piece -> testside 
-
--- checkMove :: Side -> Move -> Board -> Coord -> Bool
--- checkMove side move board coord = 
---   case unField $ getFieldUnsafe board coord of
---     Nothing -> False
---     Just piece -> testSide side piece && checkDir move piece
 
 wm :: Field
 wm = toField $ Man White

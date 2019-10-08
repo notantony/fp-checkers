@@ -9,6 +9,7 @@ module Util
   , makeSerialization
   , Marge(..)
   , update
+  , headMaybe
   )
   where
 
@@ -71,3 +72,7 @@ update index elem arr = take index arr ++ [elem] ++ drop (index + 1) arr
 --   return $ []
 
 data Marge = As | Bs
+
+headMaybe :: [a] -> Maybe a
+headMaybe (x : _) = Just x
+headMaybe [] = Nothing

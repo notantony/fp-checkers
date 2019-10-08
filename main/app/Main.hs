@@ -7,9 +7,6 @@ import Network.Simple.TCP
 import Board
   ( Side(..)
   )
-import Text.Read
-  ( readMaybe
-  )
 
 readColor :: IO Side
 readColor = do
