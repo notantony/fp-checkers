@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-} -- TODO
+{-# LANGUAGE TemplateHaskell #-}
 
 module MyTH where
 

@@ -13,24 +13,14 @@ module Util
   )
   where
 
-import Control.Monad
-  ( (>=>)
-  )
-import System.IO
-  ( withFile
-  , hGetLine
-  , IOMode(ReadMode)
-  )
-import Data.Foldable
-  ( find
-  )
-import Data.Maybe
-  ( fromJust
-  )
+import Control.Monad ((>=>))
+import Data.Foldable (find)
+import Data.Maybe (fromJust)
+import System.IO (IOMode (ReadMode), hGetLine, withFile)
 
 pullMaybeSnd :: (a, Maybe b) -> Maybe (a, b)
 pullMaybeSnd (a, Nothing) = Nothing
-pullMaybeSnd (a, Just b) = Just (a, b)
+pullMaybeSnd (a, Just b)  = Just (a, b)
 
 runPipe :: Monad m => [a -> m a] -> (a -> m a)
 runPipe = foldr (>=>) return
@@ -60,13 +50,13 @@ instance (Serializable a, Serializable b) => Serializable (a, b) where
 makeSerialization :: forall a . Eq a => [(a, String)] -> (a -> String, String -> a)
 makeSerialization pairs = (toS, fromS)
   where
-    toS :: a -> String 
+    toS :: a -> String
     toS obj = snd $ fromJust $ find (\(a, _) -> (a == obj)) pairs
     fromS :: String -> a
     fromS str = fst $ fromJust $ find (\(_, s) -> (s == str)) pairs
 
 update :: Int -> a -> [a] -> [a] --TODO: tests
-update index elem arr = take index arr ++ [elem] ++ drop (index + 1) arr  
+update index elem arr = take index arr ++ [elem] ++ drop (index + 1) arr
 -- prp :: Name -> Q [Dec]
 -- prp = do
 --   return $ []
@@ -75,4 +65,4 @@ data Marge = As | Bs
 
 headMaybe :: [a] -> Maybe a
 headMaybe (x : _) = Just x
-headMaybe [] = Nothing
+headMaybe []      = Nothing

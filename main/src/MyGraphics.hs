@@ -6,19 +6,9 @@ module MyGraphics
   , purge
   ) where
 
+import Board (Board, Piece (..), Side (..))
 import Graphics.Gloss
-import Board
-  ( Board
-  , Piece(..)
-  , Side(..)
-  )
-import Resources
-  ( boardTex
-  , blackManTex
-  , whiteManTex
-  , blackKingTex
-  , whiteKingTex
-  )
+import Resources (blackKingTex, blackManTex, boardTex, whiteKingTex, whiteManTex)
 
 makeText :: Float -> Point -> String -> Picture
 makeText size (x, y) s = Color white $ Translate x y (Scale size size (Text s))
@@ -33,11 +23,11 @@ toBold :: Picture -> Picture
 toBold pic = Pictures [pic, Translate 1 0 pic]
 
 makePiece :: Piece -> Picture
-makePiece (Man Black) = blackManTex
-makePiece (Man White) = whiteManTex
+makePiece (Man Black)  = blackManTex
+makePiece (Man White)  = whiteManTex
 makePiece (King Black) = blackKingTex
 makePiece (King White) = whiteKingTex
 
 purge :: Picture -> Picture
 purge (Translate _ _ pic) = purge pic
-purge pic = pic
+purge pic                 = pic

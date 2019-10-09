@@ -2,91 +2,30 @@ module Engine
   ( runGame
   ) where
 
+import Board (Board (..), Coord (..), Field (..), Move (..), Piece (..), Side (..), chainMoves,
+              checkDir, dumpBoard, getFieldUnsafe, getPiece, getPossibleMoves, inBoardRange,
+              makeMove, startingPosition, tryMove)
+import Control.Concurrent (MVar, forkIO, putMVar, readMVar, takeMVar, tryPutMVar, tryTakeMVar)
+import Control.Monad (when)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.List (sortBy)
+import Data.Maybe (catMaybes, fromMaybe)
 import Graphics.Gloss
 import Graphics.Gloss.Data.Controller
+import Graphics.Gloss.Data.Point (Point (..), pointInBox)
+import qualified Graphics.Gloss.Data.Point.Arithmetic as PA (negate, (*), (+), (-))
 import Graphics.Gloss.Interface.IO.Game
-import Graphics.Gloss.Data.Point 
-  ( pointInBox
-  , Point(..)
-  )
-import qualified Graphics.Gloss.Data.Point.Arithmetic as PA 
-  ( (+)
-  , (-)
-  , (*)
-  , negate
-  ) 
-import System.Environment
-import Control.Monad
-  ( when
-  )
-import Data.Maybe
-  ( catMaybes
-  , fromMaybe
-  )
-import MyGraphics
-  ( makeTextLarge
-  , makeTextNormal
-  , toBold
-  , makePiece
-  )
-import Board
-  ( Board(..)
-  , Coord(..)
-  , Piece(..)
-  , Side(..)
-  , Field(..)
-  , Move(..)
-  , dumpBoard
-  , startingPosition
-  , inBoardRange
-  , getFieldUnsafe
-  , makeMove
-  , checkDir
-  , getPiece
-  , getPossibleMoves
-  , tryMove
-  , chainMoves
-  )
-import Resources
-  ( boardTex
-  , dotTex
-  , ghostTex
-  )
-import Util
-  ( runPipe
-  , readNetworkCfg
-  , fromIntegralPair
-  , Serializable(..)
-  , headMaybe
-  )
-import Control.Concurrent
-  ( forkIO
-  , MVar
-  , putMVar
-  , tryPutMVar
-  , readMVar
-  , tryTakeMVar
-  , takeMVar
-  )
-import Server
-  ( runClient
-  )
-import Data.List 
-  ( sortBy
-  )
-import Data.IORef
-  ( newIORef
-  , IORef
-  , readIORef
-  , writeIORef
-  , modifyIORef'
-  )
+import MyGraphics (makePiece, makeTextLarge, makeTextNormal, toBold)
 import Network.Simple.TCP
+import Resources (boardTex, dotTex, ghostTex)
+import Server (runClient)
+import System.Environment
+import Util (Serializable (..), fromIntegralPair, headMaybe, readNetworkCfg, runPipe)
 
 newtype Scene = Scene { unScene :: [Actor] }
 
 data Handler = Handler
-  { hPrior  :: Int 
+  { hPrior  :: Int
   , hAction :: Event -> Scene -> IO Scene
   }
 
@@ -155,7 +94,7 @@ runGame side = do
     waitStart :: IO ()
     waitStart = do
       putStrLn "Waiting for other players"
-      putMVar sendBuf "nop" 
+      putMVar sendBuf "nop"
       _ <- takeMVar recvBuf
       when (side == Black) $ putMVar sendBuf "nop"
 
@@ -182,7 +121,7 @@ runGame side = do
             nextCoords :: Maybe Move -> [Coord]
             nextCoords lastMoveM = map snd $ getPossibleMoves lastMoveM board coord
             nextScene :: Coord -> [Coord] -> Scene
-            nextScene dotCoord nextCoords = Scene $ ghost : nextDots ++ filtered 
+            nextScene dotCoord nextCoords = Scene $ ghost : nextDots ++ filtered
               where
                 ghost :: Actor
                 ghost = setupAtCoord ghostTex 1 "ghost" coord
@@ -226,7 +165,7 @@ runGame side = do
       curSide <- readIORef sidePtr
       when (curSide == side) $ do
         mCoord <- readIORef startPtr
-        case mCoord of 
+        case mCoord of
           Nothing -> return ()
           (Just coord) -> do
             q <- readIORef queuePtr
@@ -258,10 +197,9 @@ runGame side = do
         (InWindow "Checkers" windowSize (0, 0))
         black
         10
-        -- boardScene
-        (makeBoard startingPosition)
+        loadingScreenScene
         drawScene
-        ( handleEvent 
+        ( handleEvent
           [ Handler{ hAction = pushQueueAction, hPrior = 0 }
           , Handler{ hAction = releaseQueueAction, hPrior = 0 }
           ]
@@ -277,15 +215,15 @@ makeFieldAction action (EventKey (MouseButton LeftButton) Down _ point) = do
     mCoord :: Maybe Coord
     mCoord = pointToCoord normalized
   case mCoord of
-    Nothing -> return
+    Nothing    -> return
     Just coord -> action coord
-makeFieldAction _ _ = return  
+makeFieldAction _ _ = return
 
 coordToPoint :: Coord -> Point
 coordToPoint (Coord p) = fieldSide PA.* (fromIntegralPair p) PA.+ boardBegin
 
 pointToCoord :: Point -> Maybe Coord
-pointToCoord p = 
+pointToCoord p =
   if inBoardRange (a, b)
   then Just $ Coord (a, b)
   else Nothing
@@ -300,7 +238,7 @@ pointToCoord p =
 setupPiece :: Piece -> Coord -> Actor
 setupPiece piece = setupAtCoord (makePiece piece) 0 "piece"
 
-setupAtCoord :: Picture -> Int -> String -> Coord -> Actor 
+setupAtCoord :: Picture -> Int -> String -> Coord -> Actor
 setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrior = prior}
   where
     placed :: Picture

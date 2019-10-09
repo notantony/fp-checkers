@@ -20,35 +20,14 @@ module Board
   , finalize
   ) where
 
-import Data.Vector
-  ( (!)
-  , (!?)
-  , Vector
-  , fromList
-  , (//)
-  , toList
-  )
-import Data.Maybe
-  ( isJust
-  , isNothing
-  , mapMaybe
-  )
-import Control.Monad
-  ( join
-  )
-import Util
-  ( pullMaybeSnd
-  , Marge(..)
-  , Serializable(..)
-  , makeSerialization
-  )
-import MyTH 
-  ( mkConv -- TODO
-  , mkShow
-  )
+import Control.Monad (join)
+import Data.Maybe (isJust, isNothing, mapMaybe)
+import Data.Vector (Vector, fromList, toList, (!), (!?), (//))
+import MyTH (mkConv, mkShow)
+import Util (Marge (..), Serializable (..), makeSerialization, pullMaybeSnd)
 
-data Side 
-  = Black 
+data Side
+  = Black
   | White
   deriving (Show, Eq)
 
@@ -59,7 +38,7 @@ sideSerialization = makeSerialization
   ]
 
 instance Serializable Side where
-  serialize = fst sideSerialization 
+  serialize = fst sideSerialization
   deserialize = snd sideSerialization
 
 instance Enum Side where
@@ -72,7 +51,7 @@ switchSide :: Side -> Side
 switchSide Black = White
 switchSide White = Black
 
-data Piece 
+data Piece
   = Man Side
   | King Side
   deriving (Show, Eq)
@@ -90,16 +69,16 @@ fieldSerialization = makeSerialization
   ]
 
 promote :: Piece -> Piece
-promote (Man color) = King color
+promote (Man color)  = King color
 promote (King color) = King color
 
 instance Serializable Field where
-  serialize = fst fieldSerialization 
+  serialize = fst fieldSerialization
   deserialize = snd fieldSerialization
 
 newtype Board = Board { unBoard :: Vector Field }
   deriving (Show, Eq)
-  
+
 instance Serializable Board where
   serialize = serialize . toList . unBoard
   deserialize = Board . fromList . deserialize
@@ -112,7 +91,7 @@ instance Enum Coord where
     if inBoardRange (x, y)
     then x + y * 8
     else error $ "Bad coord: " ++ (show c)
-  toEnum num = 
+  toEnum num =
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
     else Coord (num `mod` 8, num `div` 8)
@@ -122,7 +101,7 @@ instance Serializable Coord where
   deserialize = toEnum . read
 
 getSide :: Piece -> Side
-getSide (Man side) = side
+getSide (Man side)  = side
 getSide (King side) = side
 
 sumCoord :: Coord -> Coord -> Coord
@@ -132,7 +111,7 @@ subCoord :: Coord -> Coord -> Coord
 subCoord (Coord (x1, y1)) (Coord (x2, y2)) = Coord (x1 - x2, y1 - y2)
 
 inBoardRange :: (Int, Int) -> Bool
-inBoardRange (x, y) = 
+inBoardRange (x, y) =
   x < 8 && x >= 0 && y < 8 && y >= 0
 
 getField :: Board -> Coord -> Maybe Field
@@ -171,7 +150,7 @@ setFields target (Board v) =
   Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
 
 startingPosition :: Board
-startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)  
+startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)
   where
     whitePieces :: [(Coord, Field)]
     whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
@@ -198,7 +177,7 @@ data Dir
   deriving (Show, Eq)
 
 dirSerializarion :: (Dir -> String, String -> Dir)
-dirSerializarion = makeSerialization 
+dirSerializarion = makeSerialization
   [ (NW, "0")
   , (NE, "1")
   , (SW, "2")
@@ -209,14 +188,14 @@ instance Serializable Dir where
   serialize = fst dirSerializarion
   deserialize = snd dirSerializarion
 
-data Move 
+data Move
   = Eat Dir
   | Walk Dir
   deriving (Show, Eq)
 
 instance Serializable Move where
   serialize (Walk dir) = 'w' : serialize dir
-  serialize (Eat dir) = 'e' : serialize dir
+  serialize (Eat dir)  = 'e' : serialize dir
   deserialize str@(char : chars)
     | char == 'w' = Walk $ deserialize chars
     | char == 'e' = Eat $ deserialize chars
@@ -230,13 +209,13 @@ dirToCoord SE = Coord (1, -1)
 dirToCoord SW = Coord (-1, -1)
 
 coordToDir :: Coord -> Dir
-coordToDir (Coord (-1, 1)) = NW 
-coordToDir (Coord (1, 1)) = NE 
-coordToDir (Coord (1, -1)) = SE 
-coordToDir (Coord (-1, -1)) = SW 
+coordToDir (Coord (-1, 1))  = NW
+coordToDir (Coord (1, 1))   = NE
+coordToDir (Coord (1, -1))  = SE
+coordToDir (Coord (-1, -1)) = SW
 
 getDir :: Move -> Dir
-getDir (Eat dir) = dir
+getDir (Eat dir)  = dir
 getDir (Walk dir) = dir
 
 pieceDirs :: Piece -> [Dir]
@@ -259,7 +238,7 @@ makeMove a b
   | dist == 2 = Just $ Walk $ coordToDir diff
   | dist == 8 = Just $ Eat $ coordToDir $ Coord (x `div` 2, y `div` 2)
   | otherwise = Nothing
-  where 
+  where
     diff :: Coord
     diff = a `subCoord` b
     (x, y) = unCoord diff :: (Int, Int)
@@ -272,7 +251,7 @@ tryMove piece (Walk dir) coord board =
   case getField board dst of
     Nothing -> Nothing
     Just (Field mPiece) -> case mPiece of
-      Nothing -> Just (setFields [(coord, Field Nothing), (dst, toField piece)] board, dst)
+      Nothing  -> Just (setFields [(coord, Field Nothing), (dst, toField piece)] board, dst)
       (Just _) -> Nothing
   where
     dst :: Coord
@@ -294,22 +273,22 @@ tryMove piece (Eat dir) coord board =
     isEmptyDst =
       case getField board dst of
         Nothing -> False
-        Just a -> isNothing $ unField a
+        Just a  -> isNothing $ unField a
     isEnemyVictim :: Bool
-    isEnemyVictim = 
+    isEnemyVictim =
       case unField =<< getField board victimCoord of
-        Nothing -> False
+        Nothing     -> False
         Just victim -> getSide victim /= getSide piece
 
 chainMoves :: Piece -> [Move] -> Coord -> Board -> Maybe (Board, Coord)
-chainMoves piece moves coord board = 
-  if checkEat 
+chainMoves piece moves coord board =
+  if checkEat
   then foldr foldSingle (Just (board, coord)) moves
   else Nothing
   where
     isEat :: Move -> Bool
     isEat (Eat _) = True
-    isEat _ = False
+    isEat _       = False
     checkEat :: Bool
     checkEat = all isEat moves || length moves == 1
     foldSingle :: Move -> Maybe (Board, Coord) -> Maybe (Board, Coord)
@@ -317,10 +296,20 @@ chainMoves piece moves coord board =
       (curBoard, curCoord) <- mPos
       tryMove piece move curCoord curBoard
 
+canEat :: Side -> Board -> Bool
+canEat side board = null $ getPossibleEats side board
+
+getPossibleEats :: Side -> Board -> [(Board, Coord)]
+getPossibleEats side board =
+  concatMap (\(coord, _) -> getPossibleMoves (Just $ Eat NW) board coord) dump
+  where
+    dump :: [(Coord, Piece)]
+    dump = filter (\(_, piece) -> getSide piece == side) (dumpBoard board)
+
 getPossibleMoves :: Maybe Move -> Board -> Coord -> [(Board, Coord)]
 getPossibleMoves lastMove board coord =
   case unField $ getFieldUnsafe board coord of
-    Nothing -> []
+    Nothing      -> []
     (Just piece) -> processPiece piece
   where
     processPiece :: Piece -> [(Board, Coord)]
@@ -329,10 +318,10 @@ getPossibleMoves lastMove board coord =
         dirs :: [Dir]
         dirs = pieceDirs piece
         moves :: [Move]
-        moves = concatMap (\dir -> 
+        moves = concatMap (\dir ->
           case lastMove of
-            Nothing -> [Eat dir, Walk dir]
-            Just (Eat _) -> [Eat dir]
+            Nothing       -> [Eat dir, Walk dir]
+            Just (Eat _)  -> [Eat dir]
             Just (Walk _) -> []
           ) dirs
 

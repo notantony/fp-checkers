@@ -1,12 +1,6 @@
-import Engine
-  ( runGame
-  )
-import Network.Simple.TCP
-  ( withSocketsDo
-  )
-import Board
-  ( Side(..)
-  )
+import Board (Side (..))
+import Engine (runGame)
+import Network.Simple.TCP (withSocketsDo)
 
 readColor :: IO Side
 readColor = do
@@ -19,12 +13,12 @@ readColor = do
       readColor
   where
     parseColor :: String -> Maybe Side
-    parseColor "w" = Just White
+    parseColor "w"     = Just White
     parseColor "white" = Just White
-    parseColor "b" = Just Black
+    parseColor "b"     = Just Black
     parseColor "black" = Just Black
-    parseColor _ = Nothing
-  
+    parseColor _       = Nothing
+
 
 main :: IO ()
 main = withSocketsDo $ do

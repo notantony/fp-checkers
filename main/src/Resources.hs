@@ -11,17 +11,17 @@ module Resources
   )
 where
 
+import Data.ByteString (ByteString)
 import Data.FileEmbed
-import Data.ByteString(ByteString)
-import Graphics.Gloss.Data.Bitmap
 import Graphics.Gloss
+import Graphics.Gloss.Data.Bitmap
 
 importTex :: Int -> Int -> ByteString -> Picture
 importTex x y texData = Translate (fromIntegral x / 2) (fromIntegral y / 2) bmpTex
   where
     bmpTex :: Picture
     bmpTex =
-      bitmapOfByteString x y 
+      bitmapOfByteString x y
       BitmapFormat{ rowOrder = TopToBottom, pixelFormat = PxRGBA }
       texData
       True

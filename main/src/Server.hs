@@ -6,61 +6,19 @@ module Server
   )
   where
 
+import Board (Board (..), Coord (..), Move, Side (..), chainMoves, finalize, getPiece,
+              startingPosition, switchSide)
+import Control.Concurrent (MVar, ThreadId, forkIO, newEmptyMVar, newMVar, putMVar, takeMVar)
+import Control.Monad (when)
+import Data.ByteString.Char8 (ByteString, pack, unpack)
+import Data.Foldable (for_)
+import Data.IORef (IORef, atomicModifyIORef', atomicWriteIORef, newIORef, readIORef, writeIORef)
+import Data.List (elemIndex)
+import Data.Maybe (catMaybes, isJust)
 import Network.Simple.TCP
-import Control.Concurrent
-  ( MVar
-  , forkIO
-  , newMVar
-  , ThreadId
-  , takeMVar
-  , newEmptyMVar
-  , putMVar
-  )
 import System.IO
-import Data.ByteString.Char8
-  ( ByteString
-  , unpack
-  , pack
-  )
-import Data.IORef
-  ( IORef
-  , newIORef
-  , readIORef
-  , writeIORef
-  , atomicModifyIORef'
-  , atomicWriteIORef
-  )
-import Data.Foldable
-  ( for_
-  )
-import Data.List
-  ( elemIndex
-  )
-import Board
-  ( startingPosition
-  , Board(..)
-  , Side(..)
-  , Move
-  , chainMoves
-  , getPiece
-  , Coord(..)
-  , switchSide
-  , finalize
-  )
-import Util
-  ( Serializable(..)
-  , update
-  )
-import Text.Read
-  ( readMaybe   
-  )
-import Data.Maybe
-  ( catMaybes
-  , isJust
-  )
-import Control.Monad
-  ( when
-  )
+import Text.Read (readMaybe)
+import Util (Serializable (..), update)
 
 -- Shalyto?
 data ServerState = WaitStart | WaitMove Side
@@ -80,19 +38,19 @@ runServer hostPref service = do
     broadcastBoard side = do
       board <- readIORef boardPtr
       mPlayers <- readIORef playersPtr
-      mapM_ (sendMsg $ serialize (board, side)) (catMaybes mPlayers) 
+      mapM_ (sendMsg $ serialize (board, side)) (catMaybes mPlayers)
     runBroadcast :: Socket -> IO ()
     runBroadcast socket = do
       buf <- recv socket 1024
       case buf of
         Nothing -> do
-          putStrLn $ "Connection " ++ show socket ++ " was closed" 
+          putStrLn $ "Connection " ++ show socket ++ " was closed"
           return ()
         Just msg -> do
           let
-            unpacked :: String 
+            unpacked :: String
             unpacked = unpack msg
-          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket 
+          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket
           if unpacked == "ping"
             then do
               sendMsg "pong" socket
@@ -106,20 +64,20 @@ runServer hostPref service = do
                     side = deserialize unpacked
                     fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
                     fillSlot arr = case slot of
-                      Nothing -> (update id (Just socket) arr, True)
+                      Nothing  -> (update id (Just socket) arr, True)
                       (Just _) -> (arr, False)
                       where
                         id :: Int
                         id = fromEnum side
                         slot :: Maybe Socket
-                        slot = arr !! id  
+                        slot = arr !! id
                   result <- atomicModifyIORef' playersPtr fillSlot
-                  if result 
+                  if result
                   then do
                     sendMsg "ok" socket
                     players <- readIORef playersPtr
                     when (all isJust players) $ do
-                      atomicWriteIORef statePtr $ WaitMove White 
+                      atomicWriteIORef statePtr $ WaitMove White
                       broadcastBoard White
                     runBroadcast socket
                   else sendMsg "Slot is not empty" socket
@@ -150,11 +108,11 @@ recvMsg socket = do
   buf <- recv socket 1024
   case buf of
     Nothing -> do
-      putStrLn $ "Connection " ++ show socket ++ " was closed" 
+      putStrLn $ "Connection " ++ show socket ++ " was closed"
       return []
     Just msg -> do
       let unpacked = unpack msg
-      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket  
+      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket
       return unpacked
 
 sendMsg :: String -> Socket -> IO ()
