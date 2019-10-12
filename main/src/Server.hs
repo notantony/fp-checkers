@@ -3,6 +3,9 @@ module Server
   , runClient
   , runServer
   , startingPosition
+  , dummyMsg
+  , makeMsg
+  , Message(..)
   )
   where
 
@@ -20,7 +23,20 @@ import System.IO
 import Text.Read (readMaybe)
 import Util (Serializable (..), update)
 
--- Shalyto?
+data Message = Message{ mHead :: String, mBody :: String }
+  deriving (Eq)
+
+instance Show Message where
+  show Message{ mHead = head, mBody = body } = head ++ ": <" ++ body ++ ">"
+
+instance Serializable Message where
+  serialize Message{ mHead = head, mBody = body } = show (head, body)
+  deserialize string = Message { mHead = head, mBody = body }
+    where
+      (head, body) = read string :: (String, String)
+
+dummyMsg = Message{ mHead = "none", mBody = "" }
+
 data ServerState = WaitStart | WaitMove Side
 
 runServer :: HostPreference -> ServiceName -> IO ()
@@ -38,7 +54,7 @@ runServer hostPref service = do
     broadcastBoard side = do
       board <- readIORef boardPtr
       mPlayers <- readIORef playersPtr
-      mapM_ (sendMsg $ serialize (board, side)) (catMaybes mPlayers)
+      mapM_ (sendMsg $ makeMsg "board" (board, side)) (catMaybes mPlayers)
     runBroadcast :: Socket -> IO ()
     runBroadcast socket = do
       buf <- recv socket 1024
@@ -46,81 +62,92 @@ runServer hostPref service = do
         Nothing -> do
           putStrLn $ "Connection " ++ show socket ++ " was closed"
           return ()
-        Just msg -> do
+        Just bStr -> do
           let
-            unpacked :: String
-            unpacked = unpack msg
-          putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket
-          if unpacked == "ping"
-            then do
-              sendMsg "pong" socket
-              runBroadcast socket
-            else do
-              state <- readIORef statePtr
-              case state of
-                WaitStart -> do
-                  let
-                    side :: Side
-                    side = deserialize unpacked
-                    fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
-                    fillSlot arr = case slot of
-                      Nothing  -> (update id (Just socket) arr, True)
-                      (Just _) -> (arr, False)
-                      where
-                        id :: Int
-                        id = fromEnum side
-                        slot :: Maybe Socket
-                        slot = arr !! id
-                  result <- atomicModifyIORef' playersPtr fillSlot
-                  if result
-                  then do
-                    sendMsg "ok" socket
-                    players <- readIORef playersPtr
-                    when (all isJust players) $ do
-                      atomicWriteIORef statePtr $ WaitMove White
-                      broadcastBoard White
-                    runBroadcast socket
-                  else sendMsg "Slot is not empty" socket
-                (WaitMove side) -> do
-                  curBoard <- readIORef boardPtr
-                  let
-                    (moves, coord) = deserialize unpacked :: ([Move], Coord)
-                    mNewBoard :: Maybe Board
-                    mNewBoard = do
-                      when (null moves) Nothing
-                      piece <- getPiece side coord curBoard
-                      (board, _) <- chainMoves piece moves coord curBoard
-                      return $ finalize board
-                  case mNewBoard of
-                    Nothing -> broadcastBoard side
-                    (Just board) -> do
-                      let
-                        newSide :: Side
-                        newSide = switchSide side
-                      atomicWriteIORef statePtr (WaitMove $ switchSide side)
-                      writeIORef boardPtr board
-                      broadcastBoard newSide
-              runBroadcast socket
+            msg :: Message
+            msg = deserialize $ unpack bStr
+          putStrLn $ "Recieved: \"" ++ show msg ++ "\" from " ++ show socket
+          state <- readIORef statePtr
+          case state of
+            WaitStart ->
+              if mHead msg /= "side"
+              then sendMsg (makeStrMsg "Unexpected message, expected side") socket
+              else do
+                let
+                  side :: Side
+                  side = deserialize (mBody msg)
+                  fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
+                  fillSlot arr = case slot of
+                    Nothing  -> (update id (Just socket) arr, True)
+                    (Just _) -> (arr, False)
+                    where
+                      id :: Int
+                      id = fromEnum side
+                      slot :: Maybe Socket
+                      slot = arr !! id
+                result <- atomicModifyIORef' playersPtr fillSlot
+                if result
+                then do
+                  print "qwe"
+                  sendMsg (makeStrMsg "ok") socket
+                  print "qwe1"
+                  players <- readIORef playersPtr
+                  when (all isJust players) $ do
+                    atomicWriteIORef statePtr $ WaitMove White
+                    broadcastBoard White
+                  runBroadcast socket
+                else sendMsg (makeStrMsg "Slot is not empty") socket
+            (WaitMove side) ->
+              if mHead msg /= "move"
+              then sendMsg (makeStrMsg "Slot is not empty") socket
+              else do
+                curBoard <- readIORef boardPtr
+                let
+                  (moves, coord) = deserialize (mBody msg) :: ([Move], Coord)
+                  mNewBoard :: Maybe Board
+                  mNewBoard = do
+                    when (null moves) Nothing
+                    piece <- getPiece side coord curBoard
+                    (board, _) <- chainMoves piece moves coord curBoard
+                    return $ finalize board
+                case mNewBoard of
+                  Nothing -> broadcastBoard side
+                  (Just board) -> do
+                    let
+                      newSide :: Side
+                      newSide = switchSide side
+                    atomicWriteIORef statePtr (WaitMove $ switchSide side)
+                    writeIORef boardPtr board
+                    broadcastBoard newSide
+                runBroadcast socket
   serve hostPref service welcomeReciever
 
-recvMsg :: Socket -> IO String
+recvMsg :: Socket -> IO Message
 recvMsg socket = do
   buf <- recv socket 1024
   case buf of
     Nothing -> do
       putStrLn $ "Connection " ++ show socket ++ " was closed"
-      return []
-    Just msg -> do
-      let unpacked = unpack msg
-      putStrLn $ "Recieved: \"" ++ unpacked ++ "\" from " ++ show socket
-      return unpacked
+      return $ makeMsg "none" "Connection was closed"
+    Just bStr -> do
+      let
+        msg :: Message
+        msg = deserialize $ unpack bStr
+      putStrLn $ "Recieved: \"" ++ show msg ++ "\" from " ++ show socket
+      return msg
 
-sendMsg :: String -> Socket -> IO ()
+makeMsg :: (Serializable a) => String -> a -> Message
+makeMsg head obj = Message{ mHead = head, mBody = serialize obj }
+
+makeStrMsg :: String -> Message
+makeStrMsg str = Message{ mHead = "str", mBody = str}
+
+sendMsg :: Message -> Socket -> IO ()
 sendMsg msg socket = do
-  putStrLn $ "Sending: \"" ++ msg ++ "\" to " ++ show socket
-  send socket $ pack msg
+  putStrLn $ "Sending: \"" ++ show msg ++ "\" to " ++ show socket
+  send socket $ pack $ serialize msg
 
-runClient :: HostName -> ServiceName -> IO (ThreadId, MVar String, MVar String)
+runClient :: HostName -> ServiceName -> IO (ThreadId, MVar Message, MVar Message)
 runClient host service = do
   sendBuf <- newEmptyMVar
   recvBuf <- newEmptyMVar
@@ -128,7 +155,7 @@ runClient host service = do
     listenLoop :: (Socket, SockAddr) -> IO ()
     listenLoop sockPair@(socket, _) = do
       msg <- takeMVar sendBuf
-      if msg == "nop"
+      if msg == dummyMsg -- TODO: finish
       then return ()
       else sendMsg msg socket
       response <- recvMsg socket

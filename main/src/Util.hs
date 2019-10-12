@@ -47,6 +47,14 @@ instance (Serializable a, Serializable b) => Serializable (a, b) where
   serialize (a, b) = show (serialize a, serialize b)
   deserialize = (\(a, b) -> (deserialize a, deserialize b)) . read
 
+instance (Serializable a, Serializable b) => Serializable (Either a b) where
+  serialize = show . serialize
+  deserialize = deserialize . read
+
+instance Serializable Char where
+  serialize = show
+  deserialize = read
+
 makeSerialization :: forall a . Eq a => [(a, String)] -> (a -> String, String -> a)
 makeSerialization pairs = (toS, fromS)
   where

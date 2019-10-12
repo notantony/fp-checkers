@@ -3,8 +3,8 @@ module Engine
   ) where
 
 import Board (Board (..), Coord (..), Field (..), Move (..), Piece (..), Side (..), chainMoves,
-              checkDir, dumpBoard, getFieldUnsafe, getPiece, getPossibleMoves, inBoardRange,
-              makeMove, startingPosition, tryMove)
+              checkDir, dumpBoard, getFieldUnsafe, getPiece, getPossibleMoves, getStarts,
+              inBoardRange, makeMove, startingPosition, tryMove)
 import Control.Concurrent (MVar, forkIO, putMVar, readMVar, takeMVar, tryPutMVar, tryTakeMVar)
 import Control.Monad (when)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
@@ -18,7 +18,7 @@ import Graphics.Gloss.Interface.IO.Game
 import MyGraphics (makePiece, makeTextLarge, makeTextNormal, toBold)
 import Network.Simple.TCP
 import Resources (boardTex, dotTex, ghostTex)
-import Server (runClient)
+import Server (Message (..), makeMsg, runClient, dummyMsg)
 import System.Environment
 import Util (Serializable (..), fromIntegralPair, headMaybe, readNetworkCfg, runPipe)
 
@@ -86,17 +86,17 @@ runGame side = do
   let
     register :: IO (Maybe String)
     register = do
-      putMVar sendBuf (serialize side)
+      putMVar sendBuf $ makeMsg "side" side
       ans <- takeMVar recvBuf
-      return $ if ans == "ok"
+      return $ if mBody ans == "ok"
       then Nothing
-      else Just $ "Register failed: \"" ++ ans ++ "\""
+      else Just $ "Register failed: \"" ++ mBody ans ++ "\""
     waitStart :: IO ()
     waitStart = do
       putStrLn "Waiting for other players"
-      putMVar sendBuf "nop"
+      putMVar sendBuf dummyMsg
       _ <- takeMVar recvBuf
-      when (side == Black) $ putMVar sendBuf "nop"
+      when (side == Black) $ putMVar sendBuf dummyMsg
 
   startPtr <- newIORef Nothing
   bodyPtr <- newIORef (Man side)
@@ -116,10 +116,10 @@ runGame side = do
         setupPremove :: (Board, Coord) -> IO Scene
         setupPremove (board, coord) = do
           q <- readIORef queuePtr
-          return $ nextScene coord (nextCoords $ headMaybe q)
+          return $ nextScene coord (getNextCoords $ headMaybe q)
           where
-            nextCoords :: Maybe Move -> [Coord]
-            nextCoords lastMoveM = map snd $ getPossibleMoves lastMoveM board coord
+            getNextCoords :: Maybe Move -> [Coord]
+            getNextCoords lastMoveM = map snd $ getPossibleMoves lastMoveM board coord
             nextScene :: Coord -> [Coord] -> Scene
             nextScene dotCoord nextCoords = Scene $ ghost : nextDots ++ filtered
               where
@@ -132,13 +132,20 @@ runGame side = do
       mStart <- readIORef startPtr
       case mStart of
         Nothing -> do
-          board <- readIORef boardPtr
-          case getPiece side coord board of
-            Nothing -> return scene
-            (Just body) -> do
-              writeIORef startPtr $ Just coord
-              writeIORef bodyPtr body
-              setupPremove (board, coord)
+          curSide <- readIORef sidePtr
+          if side /= curSide
+          then return scene
+          else do
+            board <- readIORef boardPtr
+            case getPiece side coord board of
+              Nothing -> return scene
+              (Just body) ->
+                if coord `elem` getStarts side board
+                then do
+                  writeIORef startPtr $ Just coord
+                  writeIORef bodyPtr body
+                  setupPremove (board, coord)
+                else return scene
         (Just start) -> do
           body <- readIORef bodyPtr
           board <- readIORef boardPtr
@@ -148,7 +155,6 @@ runGame side = do
             tryResult = do
               (_, lastCoord) <- chainMoves body q start board
               move <- makeMove coord lastCoord
-              start <- mStart
               if checkDir move body
               then do
                 result <- chainMoves body (move: q) start board
@@ -161,7 +167,7 @@ runGame side = do
               setupPremove newPremove
 
     releaseQueueAction :: Event -> Scene -> IO Scene
-    releaseQueueAction (EventKey (Char 'r') Down _ _) scene@(Scene actors) = do
+    releaseQueueAction (EventKey (Char 'r') Down _ _) scene = do
       curSide <- readIORef sidePtr
       when (curSide == side) $ do
         mCoord <- readIORef startPtr
@@ -169,7 +175,7 @@ runGame side = do
           Nothing -> return ()
           (Just coord) -> do
             q <- readIORef queuePtr
-            putMVar sendBuf $ serialize (q, coord)
+            putMVar sendBuf $ makeMsg "move" (q, coord)
             clearQueue
       return scene
     releaseQueueAction _ scene = return scene
@@ -179,14 +185,19 @@ runGame side = do
       recieved <- tryTakeMVar recvBuf
       case recieved of
         Nothing -> return scene
-        Just boardStr -> do
-          let
-            (newBoard, newSide) = deserialize boardStr :: (Board, Side)
-          clearQueue
-          writeIORef boardPtr newBoard
-          when (newSide /= side) $ putMVar sendBuf "nop"
-          writeIORef sidePtr newSide
-          return $ makeBoard newBoard
+        Just Message{ mHead = head, mBody = body } ->
+          case head of
+            "str" -> do
+              putStrLn body -- TODO: Endgame
+              return scene
+            "board" -> do  
+              let
+                (newBoard, newSide) = deserialize body :: (Board, Side)
+              clearQueue
+              writeIORef boardPtr newBoard
+              when (newSide /= side) $ putMVar sendBuf dummyMsg
+              writeIORef sidePtr newSide
+              return $ makeBoard newBoard
 
   status <- register
   case status of
@@ -197,7 +208,8 @@ runGame side = do
         (InWindow "Checkers" windowSize (0, 0))
         black
         10
-        loadingScreenScene
+        -- loadingScreenScene
+        (makeBoard startingPosition)
         drawScene
         ( handleEvent
           [ Handler{ hAction = pushQueueAction, hPrior = 0 }
@@ -247,7 +259,7 @@ setupAtCoord tex prior label coord = Actor{aId = label, aPicture = placed, aPrio
 setupScene :: [Actor] -> Scene
 setupScene actors = Scene $ sortBy (\a b -> compare (aPrior a) (aPrior b)) actors
 
-makeBoard :: Board -> Scene -- TODO: must-eat check
+makeBoard :: Board -> Scene
 makeBoard board =
   let
     boardActor :: Actor

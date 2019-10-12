@@ -1,13 +1,6 @@
-import Network.Simple.TCP
-  ( withSocketsDo
-  , HostPreference(Host)
-  )
-import Server
-  ( runServer
-  )
-import Util
-  ( readNetworkCfg   
-  )
+import Network.Simple.TCP (HostPreference (Host), withSocketsDo)
+import Server (runServer)
+import Util (readNetworkCfg)
 
 main :: IO ()
 main = withSocketsDo $ do

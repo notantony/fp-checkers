@@ -11,17 +11,18 @@ module Board
   , getFieldUnsafe
   , makeMove
   , chainMoves
-  -- , checkMove
   , checkDir
   , getPiece
   , switchSide
   , getPossibleMoves
   , tryMove
   , finalize
+  , getStarts
   ) where
 
 import Control.Monad (join)
-import Data.Maybe (isJust, isNothing, mapMaybe)
+import Control.Parallel.Strategies (parMap)
+import Data.Maybe (catMaybes, isJust, isNothing, mapMaybe)
 import Data.Vector (Vector, fromList, toList, (!), (!?), (//))
 import MyTH (mkConv, mkShow)
 import Util (Marge (..), Serializable (..), makeSerialization, pullMaybeSnd)
@@ -41,7 +42,7 @@ instance Serializable Side where
   serialize = fst sideSerialization
   deserialize = snd sideSerialization
 
-instance Enum Side where
+instance Enum Side where --TODO: remove?
   fromEnum White = 0
   fromEnum Black = 1
   toEnum 0 = White
@@ -246,7 +247,7 @@ makeMove a b
     dist = x ^ 2 + y ^ 2
 
 -- TODO: "Turkish strike"?
-tryMove :: Piece -> Move -> Coord -> Board -> Maybe (Board, Coord) -- Assuming side is correct
+tryMove :: Piece -> Move -> Coord -> Board -> Maybe (Board, Coord)
 tryMove piece (Walk dir) coord board =
   case getField board dst of
     Nothing -> Nothing
@@ -282,7 +283,7 @@ tryMove piece (Eat dir) coord board =
 
 chainMoves :: Piece -> [Move] -> Coord -> Board -> Maybe (Board, Coord)
 chainMoves piece moves coord board =
-  if checkEat
+  if checkMany && checkEat
   then foldr foldSingle (Just (board, coord)) moves
   else Nothing
   where
@@ -290,40 +291,83 @@ chainMoves piece moves coord board =
     isEat (Eat _) = True
     isEat _       = False
     checkEat :: Bool
-    checkEat = all isEat moves || length moves == 1
+    checkEat = case moves of
+      []       -> True
+      move : _ -> not (canEat (getSide piece) board) || isEat move
+    checkMany :: Bool
+    checkMany = all isEat moves || length moves <= 1
     foldSingle :: Move -> Maybe (Board, Coord) -> Maybe (Board, Coord)
     foldSingle move mPos = do
       (curBoard, curCoord) <- mPos
       tryMove piece move curCoord curBoard
 
 canEat :: Side -> Board -> Bool
-canEat side board = null $ getPossibleEats side board
-
-getPossibleEats :: Side -> Board -> [(Board, Coord)]
-getPossibleEats side board =
-  concatMap (\(coord, _) -> getPossibleMoves (Just $ Eat NW) board coord) dump
+canEat side board = or produced
   where
     dump :: [(Coord, Piece)]
     dump = filter (\(_, piece) -> getSide piece == side) (dumpBoard board)
+    produced :: [Bool]
+    produced = map (\(coord, _) -> not $ null $ getPossibleMoves (Just $ Eat NW) board coord) dump
+
+hasMoves :: Side -> Board -> Bool
+hasMoves side board = not $ null $ getStarts side board
+
+getStarts :: Side -> Board -> [Coord]
+getStarts side board = filter getMoves coords
+  where
+    lastMoveM :: Maybe Move
+    lastMoveM = if canEat side board then Just $ Eat NW else Nothing
+    coords :: [Coord]
+    coords = map fst $ filter (\(_, piece) -> getSide piece == side) (dumpBoard board)
+    getMoves :: Coord -> Bool
+    getMoves coord = not $ null $ getPossibleMoves lastMoveM board coord
 
 getPossibleMoves :: Maybe Move -> Board -> Coord -> [(Board, Coord)]
-getPossibleMoves lastMove board coord =
+getPossibleMoves lastMoveM board coord =
   case unField $ getFieldUnsafe board coord of
     Nothing      -> []
-    (Just piece) -> processPiece piece
+    (Just piece) -> result piece
   where
-    processPiece :: Piece -> [(Board, Coord)]
-    processPiece piece = mapMaybe (\move -> tryMove piece move coord board) moves
+    tryMoves :: Piece -> (Dir -> Move) -> [(Board, Coord)]
+    tryMoves piece moveConstr = catMaybes $ do
+      dir <- pieceDirs piece
+      move <- [moveConstr dir]
+      return $ tryMove piece move coord board
+    result :: Piece -> [(Board, Coord)]
+    result piece = case lastMoveM of
+      Nothing -> case eatMoves of
+        [] -> walkMoves
+        _  -> eatMoves
+      (Just (Eat _))  -> eatMoves
+      (Just (Walk _)) -> []
       where
-        dirs :: [Dir]
-        dirs = pieceDirs piece
-        moves :: [Move]
-        moves = concatMap (\dir ->
-          case lastMove of
-            Nothing       -> [Eat dir, Walk dir]
-            Just (Eat _)  -> [Eat dir]
-            Just (Walk _) -> []
-          ) dirs
+        walkMoves :: [(Board, Coord)]
+        walkMoves = tryMoves piece Walk
+        eatMoves :: [(Board, Coord)]
+        eatMoves = tryMoves piece Eat
+
+    -- makeResults :: Piece -> [Move] -> [(Board, Coord)]
+    -- makeResults piece = mapMaybe (\move -> tryMove piece move coord board) generateMoves
+    --   where
+    --     dirs :: [Dir]
+    --     dirs = pieceDirs piece
+    --     generateMoves :: (Dir -> Move) -> [Move]
+    --     generateMoves = concatMap (\dir -> [moveGen dir]) dirs
+
+    --     eatResults :: [(Board, Coord)]
+    --     eatResults = makeResults piece (generateMoves Eat)
+    --     walkResults :: [(Board, Coord)]
+    --     walkResults = processPiece piece $ concatMap (\dir -> [Walk dir]) dirs
+
+    --     walkMoves :: [Move]
+    --     walkMoves = concatMap (\dir -> [Walk dir]) dirs
+    --     moves :: [Move]
+    --     moves = concatMap (\dir ->
+    --       case lastMoveM of
+    --         Nothing       -> eatMoves ++ walkMoves
+    --         Just (Eat _)  -> eatMoves
+    --         Just (Walk _) -> []
+    --       ) dirs
 
 finalize :: Board -> Board
 finalize board = setFields promoted board
