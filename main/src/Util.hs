@@ -10,6 +10,7 @@ module Util
   , Marge(..)
   , update
   , headMaybe
+  , pushPair
   )
   where
 
@@ -74,3 +75,6 @@ data Marge = As | Bs
 headMaybe :: [a] -> Maybe a
 headMaybe (x : _) = Just x
 headMaybe []      = Nothing
+
+pushPair :: (a, b) -> c -> (a, b, c)
+pushPair (a, b) c = (a, b, c)

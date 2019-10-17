@@ -9,19 +9,20 @@ module Server
   )
   where
 
-import Board (Board (..), Coord (..), Move, Side (..), chainMoves, finalize, getPiece,
-              startingPosition, switchSide)
+import Board (Board (..), Coord (..), Move, Side (..), allSides, chainMoves, getPiece, getStarts,
+              promoteBoard, startingPosition, switchSide)
 import Control.Concurrent (MVar, ThreadId, forkIO, newEmptyMVar, newMVar, putMVar, takeMVar)
-import Control.Monad (when)
-import Data.ByteString.Char8 (ByteString, pack, unpack)
+import Control.Monad (forM_, when)
+import Data.ByteString.Char8 (ByteString, pack, split, unpack)
 import Data.Foldable (for_)
 import Data.IORef (IORef, atomicModifyIORef', atomicWriteIORef, newIORef, readIORef, writeIORef)
-import Data.List (elemIndex)
-import Data.Maybe (catMaybes, isJust)
+import Data.List (elemIndex, elemIndices)
+import Data.Maybe (catMaybes, fromMaybe, isJust)
 import Network.Simple.TCP
 import System.IO
 import Text.Read (readMaybe)
 import Util (Serializable (..), update)
+import System.Exit (exitSuccess)
 
 data Message = Message{ mHead :: String, mBody :: String }
   deriving (Eq)
@@ -30,14 +31,19 @@ instance Show Message where
   show Message{ mHead = head, mBody = body } = head ++ ": <" ++ body ++ ">"
 
 instance Serializable Message where
-  serialize Message{ mHead = head, mBody = body } = show (head, body)
+  serialize Message{ mHead = head, mBody = body } = "@" ++ head ++ "@" ++ body
   deserialize string = Message { mHead = head, mBody = body }
     where
-      (head, body) = read string :: (String, String)
+      separatorPos :: Int
+      separatorPos = fromMaybe (length string) (elemIndex '@' $ tail string)
+      head :: String
+      head = tail $ take (separatorPos + 1) string
+      body :: String
+      body = drop (separatorPos + 2) string
 
 dummyMsg = Message{ mHead = "none", mBody = "" }
 
-data ServerState = WaitStart | WaitMove Side
+data ServerState = WaitStart | WaitMove Side | EndGame
 
 runServer :: HostPreference -> ServiceName -> IO ()
 runServer hostPref service = do
@@ -54,13 +60,43 @@ runServer hostPref service = do
     broadcastBoard side = do
       board <- readIORef boardPtr
       mPlayers <- readIORef playersPtr
-      mapM_ (sendMsg $ makeMsg "board" (board, side)) (catMaybes mPlayers)
+      let
+        players :: [Socket]
+        players = catMaybes mPlayers
+        canMove :: Side -> Bool
+        canMove moveSide = not $ null $ getStarts moveSide board
+        sendAll :: Message -> IO ()
+        sendAll msg = mapM_ (sendMsg msg) players
+      if all canMove allSides
+      then sendAll $ makeMsg "board" (board, side)
+      else do
+        if not $ any canMove allSides
+        then sendAll $ makeFinMsg "Draw"
+        else
+          forM_ (zip players allSides) $ \(socket, playerSide) ->
+            if canMove playerSide
+            then sendMsg (makeFinMsg "You win!!!") socket
+            else sendMsg (makeFinMsg "You lose...") socket
+        writeIORef statePtr EndGame
+        exitSuccess
+
     runBroadcast :: Socket -> IO ()
     runBroadcast socket = do
       buf <- recv socket 1024
       case buf of
         Nothing -> do
           putStrLn $ "Connection " ++ show socket ++ " was closed"
+          state <- readIORef statePtr
+          case state of
+            EndGame -> return ()
+            _ -> do
+              mPlayers <- readIORef playersPtr
+              forM_ mPlayers $ \mPlayer ->
+                case mPlayer of
+                  Nothing -> return ()
+                  Just playerSocket ->
+                    when (playerSocket /= socket) $
+                      sendMsg (makeFinMsg "Opponent has left the game.") playerSocket
           return ()
         Just bStr -> do
           let
@@ -88,9 +124,7 @@ runServer hostPref service = do
                 result <- atomicModifyIORef' playersPtr fillSlot
                 if result
                 then do
-                  print "qwe"
                   sendMsg (makeStrMsg "ok") socket
-                  print "qwe1"
                   players <- readIORef playersPtr
                   when (all isJust players) $ do
                     atomicWriteIORef statePtr $ WaitMove White
@@ -109,7 +143,7 @@ runServer hostPref service = do
                     when (null moves) Nothing
                     piece <- getPiece side coord curBoard
                     (board, _) <- chainMoves piece moves coord curBoard
-                    return $ finalize board
+                    return $ promoteBoard board
                 case mNewBoard of
                   Nothing -> broadcastBoard side
                   (Just board) -> do
@@ -122,25 +156,34 @@ runServer hostPref service = do
                 runBroadcast socket
   serve hostPref service welcomeReciever
 
-recvMsg :: Socket -> IO Message
+recvMsg :: Socket -> IO [Message]
 recvMsg socket = do
   buf <- recv socket 1024
   case buf of
     Nothing -> do
       putStrLn $ "Connection " ++ show socket ++ " was closed"
-      return $ makeMsg "none" "Connection was closed"
+      return [makeStrMsg "Connection was closed"]
     Just bStr -> do
       let
-        msg :: Message
-        msg = deserialize $ unpack bStr
-      putStrLn $ "Recieved: \"" ++ show msg ++ "\" from " ++ show socket
-      return msg
+        bites :: [String]
+        bites = tail $ map unpack $ split '@' bStr
+        merge2 :: [String] -> [Message]
+        merge2 (hd : body : other) = deserialize ("@" ++ hd ++ "@" ++ body) : merge2 other
+        merge2 _                   = []
+        processMany :: [IO Message]
+        processMany = flip map (merge2 bites) $ \msg -> do
+          putStrLn $ "Recieved: \"" ++ show msg ++ "\" from " ++ show socket
+          return msg
+      sequence processMany
 
 makeMsg :: (Serializable a) => String -> a -> Message
-makeMsg head obj = Message{ mHead = head, mBody = serialize obj }
+makeMsg hd obj = Message{ mHead = hd, mBody = serialize obj }
 
 makeStrMsg :: String -> Message
 makeStrMsg str = Message{ mHead = "str", mBody = str}
+
+makeFinMsg :: String -> Message
+makeFinMsg str = Message{ mHead = "finish", mBody = str}
 
 sendMsg :: Message -> Socket -> IO ()
 sendMsg msg socket = do
@@ -154,12 +197,19 @@ runClient host service = do
   let
     listenLoop :: (Socket, SockAddr) -> IO ()
     listenLoop sockPair@(socket, _) = do
-      msg <- takeMVar sendBuf
-      if msg == dummyMsg -- TODO: finish
-      then return ()
-      else sendMsg msg socket
-      response <- recvMsg socket
+      let
+        sendIter :: IO ()
+        sendIter = do
+          msg <- takeMVar sendBuf
+          if msg == dummyMsg -- TODO: finish
+          then return ()
+          else sendMsg msg socket
+      sendIter
+      (response : responses) <- recvMsg socket
       putMVar recvBuf response
+      forM_ responses $ \msg -> do
+        sendIter
+        putMVar recvBuf msg
       listenLoop sockPair
   clientThreadId <- forkIO $ connect host service listenLoop
   return (clientThreadId, sendBuf, recvBuf)

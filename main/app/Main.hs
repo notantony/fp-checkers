@@ -1,5 +1,5 @@
 import Board (Side (..))
-import Engine (runGame)
+import Engine (runGame, runBot)
 import Network.Simple.TCP (withSocketsDo)
 
 readColor :: IO Side
@@ -23,7 +23,10 @@ readColor = do
 main :: IO ()
 main = withSocketsDo $ do
   side <- readColor
-  runGame side
+  line <- getLine
+  case line of
+    "b" -> runBot side
+    _   -> runGame side
 
 --TODO: style, warnings, tests, TH?, imports
 --TH: trivial-read, intance Serializable

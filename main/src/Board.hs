@@ -16,16 +16,18 @@ module Board
   , switchSide
   , getPossibleMoves
   , tryMove
-  , finalize
+  , promoteBoard
+  , allSides
   , getStarts
+  , chooseMove
   ) where
 
 import Control.Monad (join)
 import Control.Parallel.Strategies (parMap)
-import Data.Maybe (catMaybes, isJust, isNothing, mapMaybe)
+import Data.Maybe (catMaybes, isJust, isNothing, listToMaybe, mapMaybe)
 import Data.Vector (Vector, fromList, toList, (!), (!?), (//))
 import MyTH (mkConv, mkShow)
-import Util (Marge (..), Serializable (..), makeSerialization, pullMaybeSnd)
+import Util (Marge (..), Serializable (..), makeSerialization, pullMaybeSnd, pushPair)
 
 data Side
   = Black
@@ -47,6 +49,9 @@ instance Enum Side where --TODO: remove?
   fromEnum Black = 1
   toEnum 0 = White
   toEnum 1 = Black
+
+allSides :: [Side]
+allSides = [White, Black]
 
 switchSide :: Side -> Side
 switchSide Black = White
@@ -151,12 +156,12 @@ setFields target (Board v) =
   Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
 
 startingPosition :: Board
-startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)
-  where
-    whitePieces :: [(Coord, Field)]
-    whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
-    blackPieces :: [(Coord, Field)]
-    blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
+-- startingPosition = whitePieces `setFields` (setFields blackPieces emptyBoard)
+--   where
+--     whitePieces :: [(Coord, Field)]
+--     whitePieces = zip (generateArea (Coord (0, 0)) (Coord (7, 2))) (repeat (toField $ Man White))
+--     blackPieces :: [(Coord, Field)]
+--     blackPieces = zip (generateArea (Coord (0, 5)) (Coord (7, 7))) (repeat (toField $ Man Black))
 
 allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
@@ -233,6 +238,16 @@ pieceDirs (King _) = allDir
 checkDir :: Move -> Piece -> Bool
 checkDir move piece = elem (getDir move) (pieceDirs piece)
 checkDir _ (King _) = True
+
+promoteBoard :: Board -> Board
+promoteBoard board = setFields promoted board
+  where
+    getRow :: Coord -> Int
+    getRow =  snd . unCoord
+    needPromotion :: (Coord, Piece) -> Bool
+    needPromotion (coord, piece) = getSide piece == White && getRow coord == 7 || getSide piece == Black && getRow coord == 0
+    promoted :: [(Coord, Field)]
+    promoted = map (\(coord, piece) -> (coord, toField $ promote piece)) $ filter needPromotion (dumpBoard board)
 
 makeMove :: Coord -> Coord -> Maybe Move
 makeMove a b
@@ -322,18 +337,18 @@ getStarts side board = filter getMoves coords
     getMoves :: Coord -> Bool
     getMoves coord = not $ null $ getPossibleMoves lastMoveM board coord
 
-getPossibleMoves :: Maybe Move -> Board -> Coord -> [(Board, Coord)]
+getPossibleMoves :: Maybe Move -> Board -> Coord -> [(Board, Coord, Move)]
 getPossibleMoves lastMoveM board coord =
   case unField $ getFieldUnsafe board coord of
     Nothing      -> []
     (Just piece) -> result piece
   where
-    tryMoves :: Piece -> (Dir -> Move) -> [(Board, Coord)]
+    tryMoves :: Piece -> (Dir -> Move) -> [(Board, Coord, Move)]
     tryMoves piece moveConstr = catMaybes $ do
       dir <- pieceDirs piece
       move <- [moveConstr dir]
-      return $ tryMove piece move coord board
-    result :: Piece -> [(Board, Coord)]
+      return ((flip pushPair move) <$> (tryMove piece move coord board))
+    result :: Piece -> [(Board, Coord, Move)]
     result piece = case lastMoveM of
       Nothing -> case eatMoves of
         [] -> walkMoves
@@ -341,43 +356,45 @@ getPossibleMoves lastMoveM board coord =
       (Just (Eat _))  -> eatMoves
       (Just (Walk _)) -> []
       where
-        walkMoves :: [(Board, Coord)]
+        walkMoves :: [(Board, Coord, Move)]
         walkMoves = tryMoves piece Walk
-        eatMoves :: [(Board, Coord)]
+        eatMoves :: [(Board, Coord, Move)]
         eatMoves = tryMoves piece Eat
 
-    -- makeResults :: Piece -> [Move] -> [(Board, Coord)]
-    -- makeResults piece = mapMaybe (\move -> tryMove piece move coord board) generateMoves
-    --   where
-    --     dirs :: [Dir]
-    --     dirs = pieceDirs piece
-    --     generateMoves :: (Dir -> Move) -> [Move]
-    --     generateMoves = concatMap (\dir -> [moveGen dir]) dirs
-
-    --     eatResults :: [(Board, Coord)]
-    --     eatResults = makeResults piece (generateMoves Eat)
-    --     walkResults :: [(Board, Coord)]
-    --     walkResults = processPiece piece $ concatMap (\dir -> [Walk dir]) dirs
-
-    --     walkMoves :: [Move]
-    --     walkMoves = concatMap (\dir -> [Walk dir]) dirs
-    --     moves :: [Move]
-    --     moves = concatMap (\dir ->
-    --       case lastMoveM of
-    --         Nothing       -> eatMoves ++ walkMoves
-    --         Just (Eat _)  -> eatMoves
-    --         Just (Walk _) -> []
-    --       ) dirs
-
-finalize :: Board -> Board
-finalize board = setFields promoted board
+chooseMove :: Int -> Side -> Board -> ([Move], Coord)
+chooseMove depth side board = winner --runEval run parMap
   where
-    getRow :: Coord -> Int
-    getRow =  snd . unCoord
-    needPromotion :: (Coord, Piece) -> Bool
-    needPromotion (coord, piece) = getSide piece == White && getRow coord == 7 || getSide piece == Black && getRow coord == 0
-    promoted :: [(Coord, Field)]
-    promoted = map (\(coord, piece) -> (coord, toField $ promote piece)) $ filter needPromotion (dumpBoard board)
+    starts :: [Coord]
+    starts = getStarts side board
+    getLongMoves :: Coord -> [(Board, [Move])]
+    getLongMoves = longStep [] board
+      where
+        longStep :: [Move] -> Board -> Coord -> [(Board, [Move])]
+        longStep curMoves curBoard curCoord =
+          if null curMoves
+          then longer
+          else (curBoard, curMoves) : longer
+          where
+            lastMoveM :: Maybe Move
+            lastMoveM = listToMaybe curMoves
+            results :: [(Board, Coord, Move)]
+            results = getPossibleMoves lastMoveM curBoard curCoord
+            longer :: [(Board, [Move])]
+            longer = do
+              (succBoard, succCoord, succMove) <- results
+              longStep (succMove : curMoves) succBoard succCoord
+    results :: [(Board, ([Move], Coord))]
+    results = do
+      start <- starts
+      ((resultBoard, resultMoves), resultStart) <- [(long, start) | long <- getLongMoves start]
+      return (resultBoard, (resultMoves, start))
+
+    winner :: ([Move], Coord) -- TODO: finish
+    winner = snd $ head results
+
+    positionScore :: Side -> Board -> Float
+    positionScore side board = 0.0
+
 
 wm :: Field
 wm = toField $ Man White
@@ -394,3 +411,5 @@ polygon2 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyB
 
 polygon3 :: Board
 polygon3 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
+
+startingPosition = polygon1
