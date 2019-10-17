@@ -309,4 +309,3 @@ runBot side = do
             _ -> do
               putStrLn $ "Unexpected message: " ++ show msg
               playLoop side board
-
