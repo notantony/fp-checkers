@@ -12,9 +12,10 @@ module Resources
 where
 
 import Data.ByteString (ByteString)
-import Data.FileEmbed
-import Graphics.Gloss
-import Graphics.Gloss.Data.Bitmap
+import Data.FileEmbed (embedFile)
+import Graphics.Gloss (Picture (..))
+import Graphics.Gloss.Data.Bitmap (BitmapFormat (..), PixelFormat (..), RowOrder (..),
+                                   bitmapOfByteString)
 
 importTex :: Int -> Int -> ByteString -> Picture
 importTex x y texData = Translate (fromIntegral x / 2) (fromIntegral y / 2) bmpTex

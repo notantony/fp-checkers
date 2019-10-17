@@ -50,7 +50,7 @@ executable checkers
 executable server
   hs-source-dirs:      app
   main-is:             MainServer.hs
-  ghc-options:         -Wall -threaded
+  ghc-options:         -Wall -threaded -Werror
   build-depends:       base
                      , main
                      , network-simple

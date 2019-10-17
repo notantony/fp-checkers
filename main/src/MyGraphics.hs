@@ -6,9 +6,9 @@ module MyGraphics
   , purge
   ) where
 
-import Board (Board, Piece (..), Side (..))
-import Graphics.Gloss
-import Resources (blackKingTex, blackManTex, boardTex, whiteKingTex, whiteManTex)
+import Board (Piece (..), Side (..))
+import Graphics.Gloss (Picture(..), Point, white)
+import Resources (blackKingTex, blackManTex, whiteKingTex, whiteManTex)
 
 makeText :: Float -> Point -> String -> Picture
 makeText size (x, y) s = Color white $ Translate x y (Scale size size (Text s))

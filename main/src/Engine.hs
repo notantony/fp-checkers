@@ -3,25 +3,21 @@ module Engine
   , runBot
   ) where
 
-import Board (Board (..), Coord (..), Field (..), Move (..), Piece (..), Side (..), chainMoves,
-              checkDir, chooseMove, dumpBoard, getFieldUnsafe, getPiece, getPossibleMoves,
-              getStarts, inBoardRange, makeMove, startingPosition, tryMove)
-import Control.Concurrent (MVar, forkIO, killThread, putMVar, readMVar, takeMVar, tryPutMVar,
-                           tryTakeMVar)
+import Board (Board (..), Coord (..), Move (..), Piece (..), Side (..), chainMoves, checkDir,
+              chooseMove, dumpBoard, getPiece, getPossibleMoves, getStarts, inBoardRange, makeMove,
+              startingPosition)
+import Control.Concurrent (MVar, killThread, putMVar, takeMVar, tryTakeMVar)
 import Control.Monad (when)
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
 import Data.List (sortBy)
-import Data.Maybe (catMaybes, fromMaybe)
-import Graphics.Gloss
-import Graphics.Gloss.Data.Controller
-import Graphics.Gloss.Data.Point (Point (..), pointInBox)
+import Graphics.Gloss (Display (InWindow), Picture (..), black)
+import Graphics.Gloss.Data.Point (Point)
 import qualified Graphics.Gloss.Data.Point.Arithmetic as PA (negate, (*), (+), (-))
-import Graphics.Gloss.Interface.IO.Game
-import MyGraphics (makePiece, makeTextLarge, makeTextNormal, toBold)
-import Network.Simple.TCP
+import Graphics.Gloss.Interface.IO.Game (Event (EventKey), Key (..), KeyState (..),
+                                         MouseButton (..), playIO)
+import MyGraphics (makePiece, makeTextNormal, toBold)
 import Resources (boardTex, dotTex, ghostTex)
 import Server (Message (..), dummyMsg, makeMsg, runClient)
-import System.Environment
 import System.Exit (exitSuccess)
 import Util (Serializable (..), fromIntegralPair, headMaybe, readNetworkCfg, runPipe)
 
@@ -39,12 +35,12 @@ data Actor = Actor
   }
 
 drawScene :: Scene -> IO Picture
-drawScene (Scene actors) = do
+drawScene scene = do
   let (x, y) = PA.negate windowCenter
-  return $ Translate x y $ Pictures $ map aPicture actors
+  return $ Translate x y $ Pictures $ map aPicture (unScene scene)
 
 handleEvent :: [Handler] -> Event -> Scene -> IO Scene
-handleEvent handlers event scene@(Scene actors) = do
+handleEvent handlers event scene = do
   let
     mx :: Int
     mx = maximum $ map hPrior handlers
@@ -52,27 +48,16 @@ handleEvent handlers event scene@(Scene actors) = do
     actions = map hAction $ filter (\handler -> hPrior handler == mx) handlers
     pipe :: [Scene -> IO Scene]
     pipe = map (\op -> op event) actions
-  (Scene actors) <- runPipe pipe scene
-  return $ setupScene actors
+  (Scene newActors) <- runPipe pipe scene
+  return $ setupScene newActors
 
 decorate :: String -> Picture -> Actor
 decorate label pic = Actor{ aId = label, aPicture = pic, aPrior = 0 }
 
-mainMenuScene :: Scene
-mainMenuScene = Scene
-  [ decorate "menu_txt" $ toBold $ makeTextLarge (-150, 200) "Main menu"
-  , decorate "play_btn" $ makeTextNormal (0, 0) "Play"
-  ]
-
-makeGameOver :: String -> Scene
-makeGameOver string = Scene
+makeGameOverScene :: String -> Scene
+makeGameOverScene string = Scene
   [ decorate "gameover_txt" $ toBold $ makeTextNormal (windowCenter PA.+ (-100, 0)) "Game over!"
   , decorate "result_txt" $ makeTextNormal (windowCenter PA.+ (-100, -100)) string
-  ]
-
-loadingScreenScene :: Scene
-loadingScreenScene = Scene
-  [ decorate "loading_txt" $ makeTextNormal (400, 400) "Loading..."
   ]
 
 windowSize :: Num a => (a, a)
@@ -253,7 +238,7 @@ runGame side = do
           case hd of
             "finish" -> do
               killThread clientThreadId
-              return $ makeGameOver body
+              return $ makeGameOverScene body
             "board" -> do
               let
                 (newBoard, newSide) = deserialize body :: (Board, Side)

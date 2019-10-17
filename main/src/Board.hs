@@ -22,12 +22,10 @@ module Board
   , chooseMove
   ) where
 
-import Control.Monad (join)
-import Control.Parallel.Strategies (parMap)
-import Data.Maybe (catMaybes, isJust, isNothing, listToMaybe, mapMaybe)
+-- import Control.Parallel.Strategies (parMap)
+import Data.Maybe (catMaybes, isNothing, listToMaybe, mapMaybe)
 import Data.Vector (Vector, fromList, toList, (!), (!?), (//))
-import MyTH (mkConv, mkShow)
-import Util (Marge (..), Serializable (..), makeSerialization, pullMaybeSnd, pushPair)
+import Util (Serializable (..), makeSerialization, pullMaybeSnd, pushPair)
 
 data Side
   = Black
@@ -44,11 +42,12 @@ instance Serializable Side where
   serialize = fst sideSerialization
   deserialize = snd sideSerialization
 
-instance Enum Side where --TODO: remove?
+instance Enum Side where
   fromEnum White = 0
   fromEnum Black = 1
   toEnum 0 = White
   toEnum 1 = Black
+  toEnum x = error $ "Cannot make Side enum from " ++ show x
 
 allSides :: [Side]
 allSides = [White, Black]
@@ -93,10 +92,10 @@ newtype Coord = Coord { unCoord :: (Int, Int) }
   deriving (Show, Eq)
 
 instance Enum Coord where
-  fromEnum c@(Coord (x, y)) =
+  fromEnum coord@(Coord (x, y)) =
     if inBoardRange (x, y)
     then x + y * 8
-    else error $ "Bad coord: " ++ (show c)
+    else error $ "Bad coord: " ++ (show coord)
   toEnum num =
     if num >= 64 || num < 0
     then error $ "Bad position: " ++ (show num)
@@ -127,8 +126,8 @@ getField (Board v) (Coord (x, y)) =
   else Nothing
 
 getFieldUnsafe :: Board -> Coord -> Field
-getFieldUnsafe (Board v) c =
-  v ! fromEnum c
+getFieldUnsafe (Board v) coord =
+  v ! fromEnum coord
 
 getPiece :: Side -> Coord -> Board -> Maybe Piece
 getPiece side coord board = do
@@ -147,10 +146,6 @@ toField = Field . Just
 emptyBoard :: Board
 emptyBoard = Board $ fromList $ replicate 64 (Field Nothing)
 
-setField :: Field -> Coord -> Board -> Board
-setField field coord =
-  setFields [(coord, field)]
-
 setFields :: [(Coord, Field)] -> Board -> Board
 setFields target (Board v) =
   Board $ v // (map (\(coord, field) -> (fromEnum coord, field)) target)
@@ -165,9 +160,6 @@ startingPosition :: Board
 
 allArea :: [Coord]
 allArea = generateArea (Coord (0, 0)) (Coord (7, 7))
-
-takePopulated :: Board -> [Coord] -> [Coord]
-takePopulated board = filter (isJust . unField . getFieldUnsafe board)
 
 dumpBoard :: Board -> [(Coord, Piece)]
 dumpBoard board = mapMaybe pullMaybeSnd merged
@@ -206,7 +198,7 @@ instance Serializable Move where
     | char == 'w' = Walk $ deserialize chars
     | char == 'e' = Eat $ deserialize chars
     | otherwise = error $ "Cannot deserialize Walk from" ++ str -- TODO: TH?
-  deserialize _ = error "Cannot deserialize Walk from empty string"
+  deserialize [] = error "Cannot deserialize Walk from empty string"
 
 dirToCoord :: Dir -> Coord
 dirToCoord NW = Coord (-1, 1)
@@ -219,6 +211,7 @@ coordToDir (Coord (-1, 1))  = NW
 coordToDir (Coord (1, 1))   = NE
 coordToDir (Coord (1, -1))  = SE
 coordToDir (Coord (-1, -1)) = SW
+coordToDir coord            = error $ "Cannot convert to coord" ++ show coord
 
 getDir :: Move -> Dir
 getDir (Eat dir)  = dir
@@ -237,7 +230,6 @@ pieceDirs (King _) = allDir
 
 checkDir :: Move -> Piece -> Bool
 checkDir move piece = elem (getDir move) (pieceDirs piece)
-checkDir _ (King _) = True
 
 promoteBoard :: Board -> Board
 promoteBoard board = setFields promoted board
@@ -259,7 +251,7 @@ makeMove a b
     diff = a `subCoord` b
     (x, y) = unCoord diff :: (Int, Int)
     dist :: Int
-    dist = x ^ 2 + y ^ 2
+    dist = x ^ (2 :: Int) + y ^ (2 :: Int)
 
 -- TODO: "Turkish strike"?
 tryMove :: Piece -> Move -> Coord -> Board -> Maybe (Board, Coord)
@@ -272,8 +264,6 @@ tryMove piece (Walk dir) coord board =
   where
     dst :: Coord
     dst = coord `sumCoord` dirToCoord dir
-    side :: Side
-    side = getSide piece
 tryMove piece (Eat dir) coord board =
   if isEmptyDst && isEnemyVictim
   then Just (setFields [(coord, Field Nothing), (victimCoord, Field Nothing), (dst, toField piece)] board, dst)
@@ -324,9 +314,6 @@ canEat side board = or produced
     produced :: [Bool]
     produced = map (\(coord, _) -> not $ null $ getPossibleMoves (Just $ Eat NW) board coord) dump
 
-hasMoves :: Side -> Board -> Bool
-hasMoves side board = not $ null $ getStarts side board
-
 getStarts :: Side -> Board -> [Coord]
 getStarts side board = filter getMoves coords
   where
@@ -362,7 +349,7 @@ getPossibleMoves lastMoveM board coord =
         eatMoves = tryMoves piece Eat
 
 chooseMove :: Int -> Side -> Board -> ([Move], Coord)
-chooseMove depth side board = winner --runEval run parMap
+chooseMove _ side board = winner --runEval run parMap
   where
     starts :: [Coord]
     starts = getStarts side board
@@ -377,23 +364,23 @@ chooseMove depth side board = winner --runEval run parMap
           where
             lastMoveM :: Maybe Move
             lastMoveM = listToMaybe curMoves
-            results :: [(Board, Coord, Move)]
-            results = getPossibleMoves lastMoveM curBoard curCoord
+            resultMoves :: [(Board, Coord, Move)]
+            resultMoves = getPossibleMoves lastMoveM curBoard curCoord
             longer :: [(Board, [Move])]
             longer = do
-              (succBoard, succCoord, succMove) <- results
+              (succBoard, succCoord, succMove) <- resultMoves
               longStep (succMove : curMoves) succBoard succCoord
     results :: [(Board, ([Move], Coord))]
     results = do
       start <- starts
       ((resultBoard, resultMoves), resultStart) <- [(long, start) | long <- getLongMoves start]
-      return (resultBoard, (resultMoves, start))
+      return (resultBoard, (resultMoves, resultStart))
 
     winner :: ([Move], Coord) -- TODO: finish
     winner = snd $ head results
 
-    positionScore :: Side -> Board -> Float
-    positionScore side board = 0.0
+    -- positionScore :: Side -> Board -> Float
+    -- positionScore _ _ = 0.0
 
 
 wm :: Field
@@ -405,11 +392,5 @@ c a b = Coord (a, b)
 
 polygon1 :: Board
 polygon1 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
-
-polygon2 :: Board
-polygon2 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
-
-polygon3 :: Board
-polygon3 = setFields [(c 0 2, wm), (c 1 3, bm), (c 3 5, bm), (c 7 7, wm)] emptyBoard
 
 startingPosition = polygon1

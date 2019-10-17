@@ -11,36 +11,35 @@ module Server
 
 import Board (Board (..), Coord (..), Move, Side (..), allSides, chainMoves, getPiece, getStarts,
               promoteBoard, startingPosition, switchSide)
-import Control.Concurrent (MVar, ThreadId, forkIO, newEmptyMVar, newMVar, putMVar, takeMVar)
+import Control.Concurrent (MVar, ThreadId, forkIO, newEmptyMVar, putMVar, takeMVar)
 import Control.Monad (forM_, when)
-import Data.ByteString.Char8 (ByteString, pack, split, unpack)
-import Data.Foldable (for_)
-import Data.IORef (IORef, atomicModifyIORef', atomicWriteIORef, newIORef, readIORef, writeIORef)
-import Data.List (elemIndex, elemIndices)
+import Data.ByteString.Char8 (pack, split, unpack)
+import Data.IORef (atomicModifyIORef', atomicWriteIORef, newIORef, readIORef, writeIORef)
+import Data.List (elemIndex)
 import Data.Maybe (catMaybes, fromMaybe, isJust)
-import Network.Simple.TCP
-import System.IO
-import Text.Read (readMaybe)
-import Util (Serializable (..), update)
+import Network.Simple.TCP (HostName, HostPreference, ServiceName, SockAddr, Socket, connect, recv,
+                           send, serve)
 import System.Exit (exitSuccess)
+import Util (Serializable (..), update)
 
 data Message = Message{ mHead :: String, mBody :: String }
   deriving (Eq)
 
 instance Show Message where
-  show Message{ mHead = head, mBody = body } = head ++ ": <" ++ body ++ ">"
+  show Message{ mHead = hd, mBody = body } = hd ++ ": <" ++ body ++ ">"
 
 instance Serializable Message where
-  serialize Message{ mHead = head, mBody = body } = "@" ++ head ++ "@" ++ body
-  deserialize string = Message { mHead = head, mBody = body }
+  serialize Message{ mHead = hd, mBody = body } = "@" ++ hd ++ "@" ++ body
+  deserialize string = Message { mHead = hd, mBody = body }
     where
       separatorPos :: Int
       separatorPos = fromMaybe (length string) (elemIndex '@' $ tail string)
-      head :: String
-      head = tail $ take (separatorPos + 1) string
+      hd :: String
+      hd = tail $ take (separatorPos + 1) string
       body :: String
       body = drop (separatorPos + 2) string
 
+dummyMsg :: Message
 dummyMsg = Message{ mHead = "none", mBody = "" }
 
 data ServerState = WaitStart | WaitMove Side | EndGame
@@ -53,7 +52,7 @@ runServer hostPref service = do
   let
     welcomeReciever :: (Socket, SockAddr) -> IO ()
     welcomeReciever sockPair@(socket, sockAddr) = do
-      putStrLn $ "Connected: " ++ show sockPair
+      putStrLn $ "Connected: " ++ show sockPair ++ "\naddress: " ++ show sockAddr
       runBroadcast socket
       return ()
     broadcastBoard :: Side -> IO ()
@@ -114,13 +113,13 @@ runServer hostPref service = do
                   side = deserialize (mBody msg)
                   fillSlot :: [Maybe Socket] -> ([Maybe Socket], Bool)
                   fillSlot arr = case slot of
-                    Nothing  -> (update id (Just socket) arr, True)
+                    Nothing  -> (update index (Just socket) arr, True)
                     (Just _) -> (arr, False)
                     where
-                      id :: Int
-                      id = fromEnum side
+                      index :: Int
+                      index = fromEnum side
                       slot :: Maybe Socket
-                      slot = arr !! id
+                      slot = arr !! index
                 result <- atomicModifyIORef' playersPtr fillSlot
                 if result
                 then do
@@ -154,6 +153,7 @@ runServer hostPref service = do
                     writeIORef boardPtr board
                     broadcastBoard newSide
                 runBroadcast socket
+            EndGame -> exitSuccess
   serve hostPref service welcomeReciever
 
 recvMsg :: Socket -> IO [Message]

@@ -7,7 +7,6 @@ module Util
   , fromIntegralPair
   , Serializable(..)
   , makeSerialization
-  , Marge(..)
   , update
   , headMaybe
   , pushPair
@@ -65,12 +64,7 @@ makeSerialization pairs = (toS, fromS)
     fromS str = fst $ fromJust $ find (\(_, s) -> (s == str)) pairs
 
 update :: Int -> a -> [a] -> [a] --TODO: tests
-update index elem arr = take index arr ++ [elem] ++ drop (index + 1) arr
--- prp :: Name -> Q [Dec]
--- prp = do
---   return $ []
-
-data Marge = As | Bs
+update index x arr = take index arr ++ [x] ++ drop (index + 1) arr
 
 headMaybe :: [a] -> Maybe a
 headMaybe (x : _) = Just x
