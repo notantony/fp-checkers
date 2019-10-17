@@ -19,7 +19,7 @@ import Data.Maybe (fromJust)
 import System.IO (IOMode (ReadMode), hGetLine, withFile)
 
 pullMaybeSnd :: (a, Maybe b) -> Maybe (a, b)
-pullMaybeSnd (a, Nothing) = Nothing
+pullMaybeSnd (_, Nothing) = Nothing
 pullMaybeSnd (a, Just b)  = Just (a, b)
 
 runPipe :: Monad m => [a -> m a] -> (a -> m a)
@@ -52,6 +52,10 @@ instance (Serializable a, Serializable b) => Serializable (Either a b) where
   deserialize = deserialize . read
 
 instance Serializable Char where
+  serialize = show
+  deserialize = read
+
+instance Serializable Int where
   serialize = show
   deserialize = read
 

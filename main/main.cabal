@@ -54,3 +54,15 @@ executable server
                      , main
                      , network-simple
   default-language:    Haskell2010
+
+test-suite tests
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , main
+                     , tasty
+                     , tasty-hspec
+  other-modules:       SerializableTests
+  ghc-options:         -Wall -threaded -Werror
+  default-language:    Haskell2010

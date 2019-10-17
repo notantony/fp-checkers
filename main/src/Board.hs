@@ -5,6 +5,7 @@ module Board
   , Coord(..)
   , Field(..)
   , Move(..)
+  , Dir(..)
   , dumpBoard
   , startingPosition
   , inBoardRange

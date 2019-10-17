@@ -5,6 +5,8 @@ module Server
   , startingPosition
   , dummyMsg
   , makeMsg
+  , makeStrMsg
+  , makeFinMsg
   , Message(..)
   )
   where
