@@ -5,14 +5,14 @@ module SerializableTests
 
 import Board
 import Server
-import Test.Tasty.Hspec (Spec, describe, it, shouldBe, Expectation)
+import Test.Tasty.Hspec (Expectation, Spec, describe, it, shouldBe)
 import Util
 
 transform :: Serializable a => a -> a
 transform = deserialize . serialize
 
 assertStable :: (Show a, Eq a, Serializable a) => a -> Expectation
-assertStable a = a `shouldBe` transform a 
+assertStable a = a `shouldBe` transform a
 
 boardTransformSpec :: Spec
 boardTransformSpec =

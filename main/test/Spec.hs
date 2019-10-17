@@ -1,6 +1,6 @@
 module Main
-       ( main
-       ) where
+  ( main
+  ) where
 
 import SerializableTests (boardTransformSpec, messageTransformSpec)
 import Test.Tasty.Hspec (hspec)
@@ -9,4 +9,3 @@ main :: IO ()
 main = hspec $ do
   boardTransformSpec
   messageTransformSpec
-
